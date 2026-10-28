@@ -39,6 +39,7 @@ export interface SalesOrder {
   taxAmount: number;
   grandTotal: number;
   attachedImageUrl?: string;
+  attachedImages?: string[];
   createdAt: number;
 }
 

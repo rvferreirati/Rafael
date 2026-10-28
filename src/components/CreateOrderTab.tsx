@@ -26,12 +26,17 @@ import {
   Package,
   Minus,
   Check,
-  ChevronRight
+  ChevronRight,
+  Scissors,
+  RefreshCw,
+  X,
+  ExternalLink
 } from 'lucide-react';
 import { Customer, LineItem, SalesOrder, CompanyProfile } from '../types';
 import { parseOCRText } from '../utils/ocrParser';
 import { generateSalesOrderPDF } from '../utils/pdfGenerator';
 import { SAMPLE_PRESETS, createSampleInvoiceImage } from '../utils/sampleInvoices';
+import { cropImageToCenter, DEFAULT_MIDDLE_CROP } from '../utils/imageCropper';
 import { SendOrderModal } from './SendOrderModal';
 
 interface CreateOrderTabProps {
@@ -43,6 +48,20 @@ interface CreateOrderTabProps {
 
 export type OrderFlowStep = 'upload' | 'items' | 'review';
 
+export interface UploadedPrint {
+  id: string;
+  name: string;
+  originalDataUrl: string;
+  croppedDataUrl: string;
+  useMiddleCrop: boolean;
+  isPdf: boolean;
+  status: 'pending' | 'processing' | 'done' | 'error';
+  itemCount?: number;
+  extractedItems?: LineItem[];
+  errorMessage?: string;
+  createdAt: number;
+}
+
 export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   customers,
   company,
@@ -51,6 +70,12 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
 }) => {
   // --- Active Step in Order Creation Flow ---
   const [activeStep, setActiveStep] = useState<OrderFlowStep>('upload');
+
+  // --- Multi-Print Management State ---
+  const [uploadedPrints, setUploadedPrints] = useState<UploadedPrint[]>([]);
+  const [focusMiddleScreen, setFocusMiddleScreen] = useState<boolean>(true); // Exclui topo (hora, bateria) e rodapé
+  const [accumulatePrints, setAccumulatePrints] = useState<boolean>(true);   // Acumula produtos dos prints
+  const [previewingPrint, setPreviewingPrint] = useState<{ print: UploadedPrint; mode: 'cropped' | 'original' } | null>(null);
 
   // --- Form State ---
   const [orderNumber, setOrderNumber] = useState<string>(
@@ -68,7 +93,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   const [custPhone, setCustPhone] = useState<string>('');
   const [custAddress, setCustAddress] = useState<string>('');
 
-  // Line items (extracted and fully editable)
+  // Line items (extracted from prints and fully editable)
   const [items, setItems] = useState<LineItem[]>([
     {
       id: 'item-1',
@@ -100,7 +125,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   const [discountRate, setDiscountRate] = useState<number>(0);
   const [taxRate, setTaxRate] = useState<number>(company.defaultTaxRate ?? 8);
   const [orderNotes, setOrderNotes] = useState<string>(
-    'Pagamento em até 30 dias via transferência bancária ou boleto. Garantia e suporte inclusos.'
+    'Pagamento em até 30 dias via transferência bancária, PIX ou boleto. Garantia e conferência inclusas.'
   );
 
   // OCR state
@@ -110,10 +135,6 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   const [ocrStatusMessage, setOcrStatusMessage] = useState<string>('');
   const [rawOcrText, setRawOcrText] = useState<string>('');
   const [showRawText, setShowRawText] = useState<boolean>(false);
-  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
-  const [attachedBase64, setAttachedBase64] = useState<string | null>(null);
-  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
-  const [isPdfDocument, setIsPdfDocument] = useState<boolean>(false);
   const [attachImageToPdf, setAttachImageToPdf] = useState<boolean>(true);
   const [feedbackSuccess, setFeedbackSuccess] = useState<string | null>(null);
 
@@ -125,13 +146,15 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const handleLoadCosmeticsItems = () => {
     setItems([
       { id: `item-${Date.now()}-1`, code: 'SKU-101', description: 'Top coat incolor', quantity: 1, unitPrice: 15.0, total: 15.0 },
       { id: `item-${Date.now()}-2`, code: 'SKU-102', description: 'Base bomba', quantity: 1, unitPrice: 18.5, total: 18.5 },
       { id: `item-${Date.now()}-3`, code: 'SKU-103', description: 'Removedor a base de acetona', quantity: 1, unitPrice: 12.0, total: 12.0 },
     ]);
-    setFeedbackSuccess('Itens inseridos com sucesso: Top coat incolor, Base bomba e Removedor a base de acetona.');
+    setFeedbackSuccess('Itens definidos: Top coat incolor, Base bomba e Removedor a base de acetona.');
     setActiveStep('items');
   };
 
@@ -160,14 +183,17 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       };
     });
 
-    setItems(parsed);
+    if (accumulatePrints) {
+      setItems((prev) => [...prev, ...parsed]);
+    } else {
+      setItems(parsed);
+    }
+
     setIsPasteModalOpen(false);
     setPasteText('');
-    setFeedbackSuccess(`${parsed.length} produtos inseridos com sucesso na tabela.`);
+    setFeedbackSuccess(`${parsed.length} produtos adicionados com sucesso.`);
     setActiveStep('items');
   };
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Calculate totals dynamically
   const subtotal = items.reduce((acc, curr) => acc + (curr.total || 0), 0);
@@ -265,10 +291,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     setCustPhone('');
     setCustAddress('');
     setDiscountRate(0);
-    setPreviewImageUrl(null);
-    setAttachedBase64(null);
-    setUploadedFileName(null);
-    setIsPdfDocument(false);
+    setUploadedPrints([]);
     setRawOcrText('');
     setFeedbackSuccess(null);
     setActiveStep('upload');
@@ -289,35 +312,32 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     });
   };
 
-  // Fallback to Tesseract.js client-side OCR (for images)
-  const runClientSideTesseract = async (fileOrBlob: Blob | File) => {
-    setOcrProgress(30);
-    setOcrStatusMessage('Executando OCR local (Tesseract)...');
-
+  // Fallback to Tesseract.js client-side OCR for cropped image
+  const runClientSideTesseract = async (imageSrcOrBlob: string | Blob): Promise<LineItem[]> => {
     const worker = await Tesseract.createWorker('por+eng', 1, {
       logger: (m: any) => {
         if (m?.status === 'recognizing text') {
           const p = Math.round((m.progress || 0) * 100);
-          setOcrProgress(Math.max(30, p));
-          setOcrStatusMessage(`Lendo imagem localmente... (${p}%)`);
+          setOcrProgress(p);
+          setOcrStatusMessage(`Lendo apenas os itens no meio da tela... (${p}%)`);
         }
       },
     });
 
-    const ret = await worker.recognize(fileOrBlob);
+    const ret = await worker.recognize(imageSrcOrBlob);
     await worker.terminate();
 
     const extractedText = ret.data.text;
-    setRawOcrText(extractedText);
+    setRawOcrText((prev) => (prev ? `${prev}\n\n--- NOVO PRINT ---\n${extractedText}` : extractedText));
 
     const parsed = parseOCRText(extractedText);
-    if (parsed.orderNumber) setOrderNumber(parsed.orderNumber);
-    if (parsed.orderDate) setOrderDate(parsed.orderDate);
+    if (parsed.orderNumber && !orderNumber) setOrderNumber(parsed.orderNumber);
+    if (parsed.orderDate && !orderDate) setOrderDate(parsed.orderDate);
     if (parsed.customerName && !custName) setCustName(parsed.customerName);
 
     let finalItems = parsed.items;
 
-    // Fallback: if no structured items found, extract each line of text as a product item
+    // Line-by-line fallback filtering
     if (finalItems.length === 0 && extractedText.trim()) {
       const textLines = extractedText
         .split(/\r?\n/)
@@ -334,89 +354,49 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       }));
     }
 
-    // If still empty, supply the 3 items requested by user
+    // Default if completely empty
     if (finalItems.length === 0) {
       finalItems = [
-        { id: 'item-1', code: 'SKU-101', description: 'Top coat incolor', quantity: 1, unitPrice: 15.0, total: 15.0 },
-        { id: 'item-2', code: 'SKU-102', description: 'Base bomba', quantity: 1, unitPrice: 18.5, total: 18.5 },
-        { id: 'item-3', code: 'SKU-103', description: 'Removedor a base de acetona', quantity: 1, unitPrice: 12.0, total: 12.0 },
+        { id: `item-cosm-1-${Date.now()}`, code: 'SKU-101', description: 'Top coat incolor', quantity: 1, unitPrice: 15.0, total: 15.0 },
+        { id: `item-cosm-2-${Date.now()}`, code: 'SKU-102', description: 'Base bomba', quantity: 1, unitPrice: 18.5, total: 18.5 },
+        { id: `item-cosm-3-${Date.now()}`, code: 'SKU-103', description: 'Removedor a base de acetona', quantity: 1, unitPrice: 12.0, total: 12.0 },
       ];
     }
 
-    setItems(finalItems);
-    setFeedbackSuccess(
-      `✅ Leitura concluída! ${finalItems.length} itens extraídos da imagem e colocados na tabela abaixo para você alterar quantidades e valores.`
-    );
-    setActiveStep('items');
+    return finalItems;
   };
 
-  // --- OCR Processing (AI Vision for Images & PDFs + Tesseract Fallback) ---
-  const processDocumentForOCR = async (fileOrBlob: Blob | File, previewUrl?: string, customName?: string) => {
-    setIsProcessingOCR(true);
-    setOcrProgress(10);
-    setOcrStatusMessage('Carregando arquivo...');
-    setFeedbackSuccess(null);
-    setItems([]); // Clear previous items immediately so old items never linger
+  // Read a single print (using AI on the middle-cropped image or Tesseract)
+  const processSinglePrint = async (
+    printItem: UploadedPrint
+  ): Promise<{ items: LineItem[]; orderNum?: string; date?: string; custName?: string }> => {
+    // Determine which image dataUrl to send to OCR:
+    // If middle crop is active and it's not a PDF, send the cropped middle area!
+    const imageToSend = printItem.useMiddleCrop && !printItem.isPdf
+      ? printItem.croppedDataUrl
+      : printItem.originalDataUrl;
 
-    const isPdf = fileOrBlob.type === 'application/pdf' || (fileOrBlob instanceof File && fileOrBlob.name.endsWith('.pdf'));
-    setIsPdfDocument(isPdf);
+    const mime = printItem.isPdf ? 'application/pdf' : 'image/png';
 
-    if (fileOrBlob instanceof File) {
-      setUploadedFileName(fileOrBlob.name);
-    } else if (customName) {
-      setUploadedFileName(customName);
-    } else {
-      setUploadedFileName('print_captura.png');
-    }
-
-    let base64String = '';
-    try {
-      base64String = await blobToBase64(fileOrBlob);
-      setPreviewImageUrl(base64String);
-      setAttachedBase64(base64String);
-    } catch {
-      if (previewUrl) {
-        setPreviewImageUrl(previewUrl);
-        setAttachedBase64(previewUrl);
-      }
-    }
-
-    try {
-      // 1. AI Vision Processing (Supports both high-res Images and PDFs directly)
-      if (ocrEngine === 'ai' || isPdf) {
-        setOcrProgress(30);
-        setOcrStatusMessage(
-          isPdf
-            ? 'Lendo documento PDF com IA (extraindo produtos, quantidades e valores)...'
-            : 'Lendo imagem do print com IA (identificando produtos, quantidades e preços)...'
-        );
-
-        const mime = isPdf ? 'application/pdf' : (fileOrBlob.type || 'image/png');
-
+    if (ocrEngine === 'ai' || printItem.isPdf) {
+      try {
         const res = await fetch('/api/ocr', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            imageBase64: base64String,
+            imageBase64: imageToSend,
             mimeType: mime,
           }),
         });
 
         if (res.ok) {
           const data = await res.json();
-          setOcrProgress(90);
-
-          if (data.orderNumber) setOrderNumber(data.orderNumber);
-          if (data.orderDate) setOrderDate(data.orderDate);
-          if (data.customerName && !custName) setCustName(data.customerName);
-          if (data.customerTaxId && !custTaxId) setCustTaxId(data.customerTaxId);
-
           if (Array.isArray(data.items) && data.items.length > 0) {
-            const mappedItems: LineItem[] = data.items.map((it: any, index: number) => {
+            const mapped: LineItem[] = data.items.map((it: any, index: number) => {
               const q = Number(it.quantity) || 1;
               const p = Number(it.unitPrice) || 0;
               return {
-                id: `item-ai-${Date.now()}-${index}`,
+                id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 4)}-${index}`,
                 code: it.code || `SKU-${1000 + index}`,
                 description: it.description || 'Produto extraído',
                 quantity: q,
@@ -424,54 +404,179 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                 total: it.total ? Number(it.total) : q * p,
               };
             });
-
-            setItems(mappedItems);
-            setFeedbackSuccess(
-              `✨ Leitura Concluída! ${mappedItems.length} itens extraídos da imagem e colocados na aba Itens e Produtos. Você pode alterar a quantidade e valor agora mesmo.`
-            );
-
-            // Automatically transition to the Items tab!
-            setActiveStep('items');
-            return;
+            return {
+              items: mapped,
+              orderNum: data.orderNumber,
+              date: data.orderDate,
+              custName: data.customerName,
+            };
           }
         }
-
-        // If AI returned empty items and it's an image, fallback to Tesseract
-        if (!isPdf) {
-          console.warn('AI OCR returned no items, falling back to Tesseract...');
-          await runClientSideTesseract(fileOrBlob);
-        } else {
-          setFeedbackSuccess('PDF lido. Por favor, confira os itens na tabela.');
-          setActiveStep('items');
-        }
-      } else {
-        await runClientSideTesseract(fileOrBlob);
+      } catch (e) {
+        console.warn('Falha no Gemini OCR para print, usando fallback local...', e);
       }
-    } catch (err) {
-      console.warn('Erro ao processar com IA:', err);
+    }
+
+    // Fallback: Tesseract local OCR on cropped image
+    const tessItems = await runClientSideTesseract(imageToSend);
+    return { items: tessItems };
+  };
+
+  // Process a batch of files (multiple screenshots/PDFs)
+  const handleProcessFiles = async (files: File[]) => {
+    if (files.length === 0) return;
+
+    setIsProcessingOCR(true);
+    setOcrProgress(10);
+    setOcrStatusMessage(`Processando ${files.length} arquivo(s)...`);
+    setFeedbackSuccess(null);
+
+    const newPrints: UploadedPrint[] = [];
+
+    // 1. Prepare and crop each file
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      setOcrStatusMessage(`Carregando e recortando meio do print (${i + 1}/${files.length})...`);
+      setOcrProgress(15 + Math.round(((i + 1) / files.length) * 20));
+
+      const base64 = await blobToBase64(file);
+      let cropped = base64;
       if (!isPdf) {
-        try {
-          await runClientSideTesseract(fileOrBlob);
-        } catch (tessErr) {
-          console.error('OCR Falhou:', tessErr);
-          alert('Não foi possível ler os itens da imagem. Você pode adicioná-los na tabela abaixo.');
-          setActiveStep('items');
-        }
+        // Crop the middle rectangular area of the screenshot to eliminate status bar and footer
+        cropped = await cropImageToCenter(base64, DEFAULT_MIDDLE_CROP);
+      }
+
+      newPrints.push({
+        id: `print-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 4)}`,
+        name: file.name,
+        originalDataUrl: base64,
+        croppedDataUrl: cropped,
+        useMiddleCrop: focusMiddleScreen,
+        isPdf,
+        status: 'pending',
+        createdAt: Date.now(),
+      });
+    }
+
+    // Update list of uploaded prints
+    const combinedPrints = accumulatePrints ? [...uploadedPrints, ...newPrints] : newPrints;
+    setUploadedPrints(combinedPrints);
+
+    // 2. Perform OCR sequentially or in batch
+    let allExtractedItems: LineItem[] = [];
+
+    for (let i = 0; i < newPrints.length; i++) {
+      const print = newPrints[i];
+      setOcrStatusMessage(
+        `Lendo itens no meio da tela do print ${i + 1} de ${newPrints.length} (${print.name})...`
+      );
+      setOcrProgress(40 + Math.round(((i + 1) / newPrints.length) * 50));
+
+      try {
+        const result = await processSinglePrint(print);
+        print.status = 'done';
+        print.itemCount = result.items.length;
+        print.extractedItems = result.items;
+
+        if (result.orderNum) setOrderNumber(result.orderNum);
+        if (result.date) setOrderDate(result.date);
+        if (result.custName && !custName) setCustName(result.custName);
+
+        allExtractedItems.push(...result.items);
+      } catch (err: any) {
+        print.status = 'error';
+        print.errorMessage = err?.message || 'Erro ao ler imagem';
+      }
+    }
+
+    setIsProcessingOCR(false);
+    setOcrProgress(100);
+
+    // 3. Update items in table
+    if (allExtractedItems.length > 0) {
+      if (accumulatePrints && uploadedPrints.length > 0) {
+        setItems((prev) => [...prev, ...allExtractedItems]);
       } else {
-        alert('Falha ao ler o PDF. Você pode cadastrar os itens na tabela.');
+        setItems(allExtractedItems);
+      }
+
+      setFeedbackSuccess(
+        `✨ Leitura Concluída! ${allExtractedItems.length} itens extraídos no meio do(s) print(s) e inseridos na aba Itens e Produtos. Você pode alterar valores e quantidades agora mesmo.`
+      );
+
+      // Automatically advance to items tab for review & value adjustment!
+      setActiveStep('items');
+    } else {
+      setFeedbackSuccess('Print(s) adicionados ao pedido. Você pode conferir os itens na tabela.');
+      setActiveStep('items');
+    }
+  };
+
+  // Re-scan an individual print
+  const handleRescanPrint = async (printId: string) => {
+    const printIndex = uploadedPrints.findIndex((p) => p.id === printId);
+    if (printIndex === -1) return;
+
+    const print = uploadedPrints[printIndex];
+    setIsProcessingOCR(true);
+    setOcrProgress(30);
+    setOcrStatusMessage(`Re-lendo itens do print: ${print.name}...`);
+
+    try {
+      const result = await processSinglePrint(print);
+      const updatedPrint: UploadedPrint = {
+        ...print,
+        status: 'done',
+        itemCount: result.items.length,
+        extractedItems: result.items,
+      };
+
+      const updatedPrints = [...uploadedPrints];
+      updatedPrints[printIndex] = updatedPrint;
+      setUploadedPrints(updatedPrints);
+
+      if (result.items.length > 0) {
+        setItems(result.items);
+        setFeedbackSuccess(`Print reprocessado! ${result.items.length} itens extraídos.`);
         setActiveStep('items');
       }
+    } catch (e) {
+      console.error(e);
+      alert('Falha ao reprocessar print.');
     } finally {
       setIsProcessingOCR(false);
       setOcrProgress(100);
     }
   };
 
-  // Test Preset Trigger
+  // Toggle crop mode for an individual print
+  const handleTogglePrintCrop = async (printId: string) => {
+    const printIndex = uploadedPrints.findIndex((p) => p.id === printId);
+    if (printIndex === -1) return;
+
+    const print = uploadedPrints[printIndex];
+    const newCropState = !print.useMiddleCrop;
+
+    const updatedPrints = [...uploadedPrints];
+    updatedPrints[printIndex] = {
+      ...print,
+      useMiddleCrop: newCropState,
+    };
+    setUploadedPrints(updatedPrints);
+  };
+
+  // Remove a print
+  const handleRemovePrint = (printId: string) => {
+    setUploadedPrints((prev) => prev.filter((p) => p.id !== printId));
+  };
+
+  // Preset test handler
   const handleLoadSamplePreset = async (presetId: string) => {
     const preset = SAMPLE_PRESETS.find((p) => p.id === presetId) || SAMPLE_PRESETS[0];
-    const { blob, dataUrl } = await createSampleInvoiceImage(preset);
-    await processDocumentForOCR(blob, dataUrl, `${preset.title}.png`);
+    const { blob } = await createSampleInvoiceImage(preset);
+    const sampleFile = new File([blob], `${preset.title}.png`, { type: 'image/png' });
+    await handleProcessFiles([sampleFile]);
   };
 
   useEffect(() => {
@@ -486,16 +591,18 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0];
-      processDocumentForOCR(file);
+      const filesArray = Array.from(e.target.files);
+      handleProcessFiles(filesArray);
+      // Reset input value so same files can be re-selected if needed
+      e.target.value = '';
     }
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const file = e.dataTransfer.files[0];
-      processDocumentForOCR(file);
+      const filesArray = Array.from(e.dataTransfer.files);
+      handleProcessFiles(filesArray);
     }
   };
 
@@ -514,6 +621,11 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       alert('Adicione ao menos um item ou produto com descrição antes de gerar o PDF.');
       return;
     }
+
+    // Attach all uploaded prints as full-page attachments in the PDF
+    const attachedImages = attachImageToPdf
+      ? uploadedPrints.map((p) => p.originalDataUrl)
+      : [];
 
     const orderData: SalesOrder = {
       id: `ord-${Date.now()}`,
@@ -537,7 +649,8 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       taxRate,
       taxAmount,
       grandTotal,
-      attachedImageUrl: attachImageToPdf && attachedBase64 ? attachedBase64 : undefined,
+      attachedImageUrl: attachedImages[0] || undefined,
+      attachedImages,
       createdAt: Date.now(),
     };
 
@@ -557,12 +670,12 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
         spread: 70,
         origin: { y: 0.7 },
       });
-    } catch (e) {
+    } catch {
       // ignore
     }
 
     setFeedbackSuccess(
-      `Pedido ${orderNumber} salvo com sucesso! PDF baixado e pronto para envio aos clientes.`
+      `Pedido ${orderNumber} salvo com sucesso com ${attachedImages.length} print(s) anexados! PDF baixado e pronto para envio.`
     );
   };
 
@@ -585,7 +698,12 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             1
           </span>
           <Upload className="w-4 h-4" />
-          <span>1. Ler Imagem / PDF</span>
+          <span>1. Inserir Prints / Imagens</span>
+          {uploadedPrints.length > 0 && (
+            <span className="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-500 text-white">
+              {uploadedPrints.length} print{uploadedPrints.length > 1 ? 's' : ''}
+            </span>
+          )}
         </button>
 
         <button
@@ -601,7 +719,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             2
           </span>
           <Edit3 className="w-4 h-4" />
-          <span>2. Itens e Produtos (Editar Valores)</span>
+          <span>2. Itens e Produtos (Alterar Valores)</span>
           <span
             className={`ml-1 text-[10px] px-2 py-0.5 rounded-full font-mono ${
               activeStep === 'items'
@@ -654,35 +772,49 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                 onClick={() => setShowRawText(!showRawText)}
                 className="text-emerald-700 underline hover:text-emerald-900 font-semibold text-[11px]"
               >
-                {showRawText ? 'Ocultar Texto' : 'Ver Texto'}
+                {showRawText ? 'Ocultar Texto' : 'Ver Texto Extraído'}
               </button>
             )}
           </div>
         </div>
       )}
 
+      {/* Raw text preview toggle */}
+      {showRawText && rawOcrText && (
+        <div className="p-4 bg-slate-900 text-slate-200 rounded-2xl text-xs font-mono space-y-2">
+          <div className="flex justify-between items-center text-slate-400">
+            <span>Texto bruto detectado pelo scanner:</span>
+            <button onClick={() => setShowRawText(false)} className="text-slate-400 hover:text-white">✕</button>
+          </div>
+          <pre className="whitespace-pre-wrap max-h-48 overflow-y-auto text-[11px] leading-relaxed">
+            {rawOcrText}
+          </pre>
+        </div>
+      )}
+
       {/* ======================================================== */}
-      {/* STEP 1: UPLOAD & READ IMAGE / PDF                        */}
+      {/* STEP 1: UPLOAD & MULTI-PRINT MANAGEMENT                  */}
       {/* ======================================================== */}
       {activeStep === 'upload' && (
         <div className="space-y-6">
-          {/* Quick preset banners */}
+          {/* Header Banner */}
           <div className="bg-gradient-to-r from-indigo-950 via-indigo-900 to-slate-900 rounded-2xl p-5 sm:p-6 text-white shadow-md">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="space-y-1">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 text-xs font-semibold border border-indigo-400/30">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  Leitor com Inteligência Artificial
+                  <Scissors className="w-3.5 h-3.5 text-indigo-300" />
+                  Recorte Inteligente do Meio da Tela
                 </div>
                 <h2 className="text-lg sm:text-xl font-bold tracking-tight">
-                  Leia o print ou PDF e edite os itens antes de gerar o PDF
+                  Insira um ou mais prints para extrair os itens
                 </h2>
-                <p className="text-xs sm:text-sm text-indigo-200">
-                  O sistema reconhece os produtos e joga direto na aba de itens para você alterar preços e quantidades:
+                <p className="text-xs sm:text-sm text-indigo-200 max-w-2xl">
+                  O sistema recorta automaticamente o topo (hora, bateria, notificações) e o rodapé (botões do app), lendo <strong>apenas os produtos no meio da tela</strong> e enviando todos os prints anexados ao PDF.
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-2.5">
+              {/* Sample Presets */}
+              <div className="flex flex-wrap gap-2">
                 {SAMPLE_PRESETS.map((p) => (
                   <button
                     key={p.id}
@@ -699,49 +831,68 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             </div>
           </div>
 
-          {/* Scanner Drop Zone */}
-          <div className="bg-white p-6 sm:p-7 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <Upload className="w-5 h-5 text-indigo-600" />
-                  Importar Imagem, Print de Fatura ou PDF
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Suporta screenshots, fotos de notas fiscais, cupons e documentos PDF.
-                </p>
-              </div>
+          {/* Controls & Configuration Bar */}
+          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 text-xs">
+              {/* Focus Middle Screen Toggle */}
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={focusMiddleScreen}
+                  onChange={(e) => setFocusMiddleScreen(e.target.checked)}
+                  className="w-4 h-4 text-indigo-600 rounded-sm border-slate-300 focus:ring-indigo-500"
+                />
+                <span className="font-bold text-slate-800 flex items-center gap-1">
+                  <Scissors className="w-3.5 h-3.5 text-indigo-600" />
+                  Focar apenas no meio da tela (Ignora topo, hora, bateria e botões)
+                </span>
+              </label>
 
-              {/* Engine Toggle */}
-              <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-medium self-start sm:self-auto">
-                <button
-                  type="button"
-                  onClick={() => setOcrEngine('ai')}
-                  className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all ${
-                    ocrEngine === 'ai'
-                      ? 'bg-white text-indigo-700 font-bold shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Cpu className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Leitura com IA (Recomendado)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOcrEngine('tesseract')}
-                  className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all ${
-                    ocrEngine === 'tesseract'
-                      ? 'bg-white text-indigo-700 font-bold shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Zap className="w-3.5 h-3.5 text-amber-500" />
-                  <span>OCR Local</span>
-                </button>
-              </div>
+              {/* Accumulate Prints Toggle */}
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={accumulatePrints}
+                  onChange={(e) => setAccumulatePrints(e.target.checked)}
+                  className="w-4 h-4 text-indigo-600 rounded-sm border-slate-300 focus:ring-indigo-500"
+                />
+                <span className="font-semibold text-slate-700">
+                  Acumular itens de múltiplos prints
+                </span>
+              </label>
             </div>
 
-            {/* Drag & Drop Area */}
+            {/* OCR Engine Selection */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-medium self-start md:self-auto">
+              <button
+                type="button"
+                onClick={() => setOcrEngine('ai')}
+                className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all ${
+                  ocrEngine === 'ai'
+                    ? 'bg-white text-indigo-700 font-bold shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Cpu className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Leitura IA (Recomendado)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setOcrEngine('tesseract')}
+                className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all ${
+                  ocrEngine === 'tesseract'
+                    ? 'bg-white text-indigo-700 font-bold shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                <span>OCR Local</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Drag & Drop Area (Multiple Files Supported) */}
+          <div className="bg-white p-6 sm:p-7 rounded-2xl border border-slate-200 shadow-xs space-y-4">
             <div
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleDrop}
@@ -753,6 +904,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                 ref={fileInputRef}
                 onChange={handleFileUpload}
                 accept="image/*,application/pdf"
+                multiple
                 className="hidden"
               />
 
@@ -762,11 +914,14 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                 </div>
                 <div>
                   <p className="text-base font-bold text-slate-800">
-                    Arraste o print da imagem ou arquivo PDF para cá
+                    Arraste um ou mais prints de celular ou arquivos PDF para cá
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
-                    Ou clique para selecionar (PNG, JPG, JPEG, WebP e PDF)
+                    Você pode selecionar <strong>vários prints de uma só vez</strong> (PNG, JPG, JPEG, WebP e PDF)
                   </p>
+                </div>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 text-[11px] font-semibold text-slate-600">
+                  <span>📸 Suporte a múltiplos prints e recorte automático do centro</span>
                 </div>
               </div>
             </div>
@@ -790,51 +945,150 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
               </div>
             )}
 
-            {/* Image/File thumbnail */}
-            {previewImageUrl && (
-              <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-20 h-16 bg-slate-100 rounded-lg overflow-hidden border border-slate-200 shrink-0 flex items-center justify-center">
-                    {isPdfDocument ? (
-                      <FileText className="w-8 h-8 text-rose-500" />
-                    ) : (
-                      <img
-                        src={previewImageUrl}
-                        alt="Comprovante"
-                        className="w-full h-full object-cover object-top"
-                      />
-                    )}
-                  </div>
-                  <div className="text-xs space-y-1">
-                    <p className="font-bold text-slate-800 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      {uploadedFileName || 'Documento lido com sucesso'}
-                    </p>
-                    <p className="text-slate-500 text-[11px]">
-                      {items.length} itens reconhecidos e prontos para edição.
-                    </p>
+            {/* Uploaded Prints Gallery */}
+            {uploadedPrints.length > 0 && (
+              <div className="pt-4 border-t border-slate-100 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-indigo-600" />
+                    Prints Anexados ({uploadedPrints.length})
+                  </h4>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Adicionar Mais Prints</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUploadedPrints([])}
+                      className="px-2.5 py-1.5 text-xs text-rose-600 hover:text-rose-800 font-semibold"
+                    >
+                      Limpar Todos
+                    </button>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+                {/* Print Cards Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  {uploadedPrints.map((print, index) => (
+                    <div
+                      key={print.id}
+                      className="border border-slate-200 rounded-2xl p-3 bg-slate-50/50 hover:bg-slate-50 hover:border-indigo-300 transition-all space-y-3 relative group"
+                    >
+                      <div className="flex items-start gap-3">
+                        {/* Thumbnail with visual preview */}
+                        <div
+                          onClick={() => setPreviewingPrint({ print, mode: print.useMiddleCrop ? 'cropped' : 'original' })}
+                          className="w-20 h-24 rounded-xl overflow-hidden border border-slate-200 bg-white shrink-0 relative cursor-pointer group/thumb"
+                          title="Clique para ampliar"
+                        >
+                          <img
+                            src={print.useMiddleCrop ? print.croppedDataUrl : print.originalDataUrl}
+                            alt={print.name}
+                            className="w-full h-full object-cover object-center"
+                          />
+                          <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center text-white">
+                            <Eye className="w-4 h-4" />
+                          </div>
+                          {print.useMiddleCrop && (
+                            <span className="absolute bottom-1 left-1 right-1 bg-indigo-600/90 text-white text-[9px] font-bold text-center py-0.5 rounded-sm">
+                              Meio
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Info & Meta */}
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
+                              Print #{index + 1}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePrint(print.id)}
+                              className="text-slate-400 hover:text-rose-600 p-1"
+                              title="Remover print"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <p className="text-xs font-semibold text-slate-800 truncate" title={print.name}>
+                            {print.name}
+                          </p>
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                            {print.status === 'done' ? (
+                              <span className="text-emerald-700 font-bold flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                {print.itemCount ?? 0} item(ns)
+                              </span>
+                            ) : print.status === 'processing' ? (
+                              <span className="text-indigo-600 font-semibold animate-pulse">
+                                Lendo...
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">Pendente</span>
+                            )}
+                          </div>
+
+                          {/* Quick Toggle for Crop on this print */}
+                          <div className="pt-1">
+                            <button
+                              type="button"
+                              onClick={() => handleTogglePrintCrop(print.id)}
+                              className={`text-[10px] px-2 py-0.5 rounded-md font-semibold transition-colors flex items-center gap-1 ${
+                                print.useMiddleCrop
+                                  ? 'bg-indigo-100 text-indigo-700'
+                                  : 'bg-slate-200 text-slate-700'
+                              }`}
+                            >
+                              <Scissors className="w-3 h-3" />
+                              <span>{print.useMiddleCrop ? 'Foco no Meio: Ativo' : 'Imagem Completa'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Card actions */}
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => handleRescanPrint(print.id)}
+                          disabled={isProcessingOCR}
+                          className="text-indigo-600 hover:text-indigo-800 font-bold text-[11px] flex items-center gap-1"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          <span>Re-ler</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewingPrint({ print, mode: 'original' })}
+                          className="text-slate-500 hover:text-slate-700 text-[11px] flex items-center gap-1"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>Ver Original</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Bottom navigation from Upload to Items */}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-100">
+                  <div className="text-xs text-slate-500">
+                    <span className="font-bold text-slate-700">{uploadedPrints.length}</span> print(s) carregados e prontos para compor o pedido e o PDF final.
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => setActiveStep('items')}
-                    className="flex-1 sm:flex-none px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-colors"
+                    className="w-full sm:w-auto px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
                   >
-                    <span>Ir Para Edição de Itens</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPreviewImageUrl(null);
-                      setAttachedBase64(null);
-                      setUploadedFileName(null);
-                    }}
-                    className="px-3 py-2 text-xs font-semibold text-rose-600 hover:text-rose-800"
-                  >
-                    Remover
+                    <span>Editar Itens e Valores ({items.length} itens)</span>
+                    <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -852,7 +1106,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             <div>
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-xs font-bold border border-indigo-100 mb-1">
                 <Edit3 className="w-3.5 h-3.5" />
-                Edição de Itens Lidos
+                Edição Direta de Valores e Quantidades
               </div>
               <h3 className="text-lg font-bold text-slate-900">
                 Itens e Produtos Extraídos ({items.length})
@@ -869,7 +1123,16 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                 className="px-3 py-2 bg-pink-50 hover:bg-pink-100 text-pink-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-pink-200"
                 title="Inserir Top coat incolor, Base bomba e Removedor"
               >
-                <span>💅 Top Coat, Base e Removedor</span>
+                <span>💅 Cosméticos (Top Coat, Base, Removedor)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Adicionar mais um print de imagem"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ Adicionar Outro Print</span>
               </button>
               <button
                 type="button"
@@ -882,13 +1145,32 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
               <button
                 type="button"
                 onClick={() => handleAddItem()}
-                className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
               >
                 <Plus className="w-4 h-4" />
-                <span>+ Adicionar Produto</span>
+                <span>+ Adicionar Linha</span>
               </button>
             </div>
           </div>
+
+          {/* Prints Reference Banner */}
+          {uploadedPrints.length > 0 && (
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between text-xs text-slate-600">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-indigo-600" />
+                <span>
+                  <strong>{uploadedPrints.length} print(s)</strong> vinculados a este pedido (anexados automaticamente no PDF).
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveStep('upload')}
+                className="text-indigo-600 hover:underline font-bold text-xs"
+              >
+                Gerenciar Prints
+              </button>
+            </div>
+          )}
 
           {/* Line Items Table */}
           <div className="overflow-x-auto rounded-2xl border border-slate-200">
@@ -935,7 +1217,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                         <button
                           type="button"
                           onClick={() => handleStepQuantity(item.id, -1)}
-                          className="px-2.5 py-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 transition-colors"
+                          className="px-2.5 py-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 transition-colors cursor-pointer"
                           title="Diminuir quantidade"
                         >
                           <Minus className="w-3.5 h-3.5" />
@@ -952,7 +1234,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                         <button
                           type="button"
                           onClick={() => handleStepQuantity(item.id, 1)}
-                          className="px-2.5 py-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 transition-colors"
+                          className="px-2.5 py-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 transition-colors cursor-pointer"
                           title="Aumentar quantidade"
                         >
                           <Plus className="w-3.5 h-3.5" />
@@ -989,7 +1271,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                       <button
                         type="button"
                         onClick={() => handleRemoveItem(item.id)}
-                        className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors"
+                        className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
                         title="Remover linha"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1015,10 +1297,10 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveStep('upload')}
-                className="px-4 py-2 border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                className="px-4 py-2 border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Voltar para Imagem</span>
+                <span>Voltar aos Prints</span>
               </button>
 
               <button
@@ -1049,14 +1331,14 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                 Informações do Cliente & Emissão do PDF
               </h3>
               <p className="text-xs text-slate-500">
-                Vincule o cliente destinatário e gere o documento final com os itens e o comprovante.
+                Vincule o cliente destinatário e gere o documento final com os itens e todos os prints anexados.
               </p>
             </div>
 
             <button
               type="button"
               onClick={() => setActiveStep('items')}
-              className="px-3.5 py-1.5 text-xs text-indigo-600 hover:bg-indigo-50 rounded-xl font-bold flex items-center gap-1.5 transition-colors self-start sm:self-auto"
+              className="px-3.5 py-1.5 text-xs text-indigo-600 hover:bg-indigo-50 rounded-xl font-bold flex items-center gap-1.5 transition-colors self-start sm:self-auto cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Voltar e Editar Itens</span>
@@ -1105,12 +1387,12 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Status
+                Status do Pedido
               </label>
               <select
                 value={orderStatus}
-                onChange={(e) => setOrderStatus(e.target.value as any)}
-                className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white transition-all font-medium"
+                onChange={(e: any) => setOrderStatus(e.target.value)}
+                className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white font-medium"
               >
                 <option value="confirmed">Confirmado / Aprovado</option>
                 <option value="draft">Rascunho</option>
@@ -1119,16 +1401,16 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             </div>
           </div>
 
-          {/* Customer Selection Box */}
+          {/* Customer Selection & Details */}
           <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                Dados do Cliente (Faturar Para / Enviar Para)
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <span className="text-sm font-bold text-slate-800">
+                Destinatário / Dados do Cliente
               </span>
               <button
                 type="button"
                 onClick={onNavigateToCustomers}
-                className="text-xs text-indigo-600 hover:text-indigo-800 font-bold transition-colors"
+                className="text-xs text-indigo-600 hover:underline font-bold"
               >
                 + Gerenciar Clientes Cadastrados
               </button>
@@ -1136,15 +1418,15 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               <div className="sm:col-span-2 md:col-span-1">
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Vincular Cliente Salvo
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Selecionar Cliente Cadastrado
                 </label>
                 <select
                   value={selectedCustomerId}
                   onChange={(e) => handleSelectCustomer(e.target.value)}
-                  className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-medium"
                 >
-                  <option value="">-- Escolher ou digitar abaixo --</option>
+                  <option value="">-- Escolher da Lista ou Digitar --</option>
                   {customers.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name} {c.taxId ? `(${c.taxId})` : ''}
@@ -1154,22 +1436,22 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Nome / Razão Social *
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Nome do Cliente / Razão Social *
                 </label>
                 <input
                   type="text"
                   required
                   value={custName}
                   onChange={(e) => setCustName(e.target.value)}
-                  placeholder="Ex: Cliente Exemplo Ltda"
+                  placeholder="ex: Maria Silva ou Salão Beleza Pura"
                   className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-medium"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  CNPJ / CPF / Tax ID
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  CNPJ / CPF
                 </label>
                 <input
                   type="text"
@@ -1181,120 +1463,131 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  E-mail do Cliente
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  E-mail
                 </label>
                 <input
                   type="email"
                   value={custEmail}
                   onChange={(e) => setCustEmail(e.target.value)}
-                  placeholder="compras@cliente.com"
+                  placeholder="cliente@exemplo.com"
                   className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  WhatsApp / Telefone
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Telefone / WhatsApp
                 </label>
                 <input
                   type="text"
                   value={custPhone}
                   onChange={(e) => setCustPhone(e.target.value)}
-                  placeholder="(11) 98765-4321"
-                  className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-mono"
+                  placeholder="(11) 99999-9999"
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Endereço
+              <div className="sm:col-span-2 md:col-span-1">
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Endereço de Entrega / Cobrança
                 </label>
                 <input
                   type="text"
                   value={custAddress}
                   onChange={(e) => setCustAddress(e.target.value)}
-                  placeholder="Rua, número, cidade, UF"
+                  placeholder="Rua, Número, Bairro, Cidade - UF"
                   className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
                 />
               </div>
             </div>
           </div>
 
-          {/* Calculations & Notes */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Attached Prints Status & PDF Option */}
+          <div className="bg-indigo-50/60 p-4 rounded-2xl border border-indigo-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-indigo-600 text-white rounded-xl">
+                <Layers className="w-5 h-5" />
+              </div>
+              <div className="text-xs">
+                <p className="font-bold text-indigo-950">
+                  {uploadedPrints.length > 0
+                    ? `${uploadedPrints.length} print(s) prontos para anexar ao PDF`
+                    : 'Nenhum print carregado no momento'}
+                </p>
+                <p className="text-indigo-700/80">
+                  {uploadedPrints.length > 0
+                    ? 'Cada print será gerado em página dedicada de alta resolução como anexo ao final do PDF.'
+                    : 'Você pode gerar o PDF apenas com a tabela ou voltar para inserir prints.'}
+                </p>
+              </div>
+            </div>
+
+            {uploadedPrints.length > 0 && (
+              <label className="flex items-center gap-2 cursor-pointer self-start sm:self-auto select-none">
+                <input
+                  type="checkbox"
+                  checked={attachImageToPdf}
+                  onChange={(e) => setAttachImageToPdf(e.target.checked)}
+                  className="w-4 h-4 text-indigo-600 rounded-sm border-indigo-300 focus:ring-indigo-500"
+                />
+                <span className="text-xs font-bold text-indigo-900">
+                  Anexar todos os prints no PDF
+                </span>
+              </label>
+            )}
+          </div>
+
+          {/* Financial summary & Notes */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Observações & Termos de Pagamento
+                Observações do Pedido & Condições de Pagamento
               </label>
               <textarea
                 rows={4}
                 value={orderNotes}
                 onChange={(e) => setOrderNotes(e.target.value)}
-                placeholder="Ex: Faturamento 30 dias..."
-                className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none leading-relaxed"
+                placeholder="Ex: Pagamento à vista via PIX ou em 30 dias no boleto..."
+                className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
               ></textarea>
-
-              {attachedBase64 && (
-                <div className="mt-3 p-3 bg-indigo-50/70 border border-indigo-200/70 rounded-xl">
-                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-indigo-900">
-                    <input
-                      type="checkbox"
-                      checked={attachImageToPdf}
-                      onChange={(e) => setAttachImageToPdf(e.target.checked)}
-                      className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                    />
-                    <span>Anexar imagem do print/comprovante na 2ª página do PDF</span>
-                  </label>
-                </div>
-              )}
             </div>
 
-            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3">
-              <div className="flex justify-between items-center text-xs text-slate-600">
-                <span>Subtotal dos {items.length} Itens:</span>
+            <div className="space-y-2.5 bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs">
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Subtotal dos Produtos:</span>
                 <span className="font-mono font-bold text-slate-900 text-sm">
                   {(company.currency || '$')} {subtotal.toFixed(2)}
                 </span>
               </div>
 
-              <div className="flex justify-between items-center text-xs text-slate-600">
+              <div className="flex justify-between items-center text-slate-600">
                 <span>Desconto (%):</span>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.5"
-                    value={discountRate}
-                    onChange={(e) => setDiscountRate(parseFloat(e.target.value) || 0)}
-                    className="w-20 border border-slate-300 rounded-lg px-2 py-1 text-right text-xs bg-white font-mono"
-                  />
-                  <span className="text-[11px] text-rose-600 font-mono w-20 text-right">
-                    -{company.currency || '$'} {discountAmount.toFixed(2)}
-                  </span>
-                </div>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.5"
+                  value={discountRate}
+                  onChange={(e) => setDiscountRate(parseFloat(e.target.value) || 0)}
+                  className="w-20 border border-slate-300 rounded-lg px-2 py-1 text-right text-xs bg-white font-mono"
+                />
               </div>
 
-              <div className="flex justify-between items-center text-xs text-slate-600">
-                <span>Impostos (%):</span>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.5"
-                    value={taxRate}
-                    onChange={(e) => setTaxRate(parseFloat(e.target.value) || 0)}
-                    className="w-20 border border-slate-300 rounded-lg px-2 py-1 text-right text-xs bg-white font-mono"
-                  />
-                  <span className="text-[11px] text-slate-600 font-mono w-20 text-right">
-                    +{company.currency || '$'} {taxAmount.toFixed(2)}
-                  </span>
-                </div>
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Taxa / Impostos (%):</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.5"
+                  value={taxRate}
+                  onChange={(e) => setTaxRate(parseFloat(e.target.value) || 0)}
+                  className="w-20 border border-slate-300 rounded-lg px-2 py-1 text-right text-xs bg-white font-mono"
+                />
               </div>
 
-              <div className="flex justify-between items-center pt-3 border-t border-slate-200">
+              <div className="flex justify-between items-center pt-2 border-t border-slate-200">
                 <div>
                   <span className="text-sm font-bold text-slate-900">Total do Pedido:</span>
                   <span className="block text-[11px] text-slate-400">Pronto para gerar PDF</span>
@@ -1311,7 +1604,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             <button
               type="button"
               onClick={() => setActiveStep('items')}
-              className="text-xs text-indigo-600 font-bold hover:underline flex items-center gap-1"
+              className="text-xs text-indigo-600 font-bold hover:underline flex items-center gap-1 cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Voltar e revisar valores dos itens</span>
@@ -1326,6 +1619,84 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             </button>
           </div>
         </form>
+      )}
+
+      {/* Modal para Visualizar / Comparar Recorte do Print */}
+      {previewingPrint && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-5 space-y-4 max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  Visualização do Print: {previewingPrint.print.name}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {previewingPrint.mode === 'cropped'
+                    ? 'Área recortada (Apenas o meio da tela, sem topo e sem rodapé do celular)'
+                    : 'Imagem original completa'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewingPrint(null)}
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Toggle Modes */}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPreviewingPrint({ ...previewingPrint, mode: 'cropped' })}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                  previewingPrint.mode === 'cropped'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <Scissors className="w-3.5 h-3.5" />
+                <span>Meio da Tela (Recortado)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewingPrint({ ...previewingPrint, mode: 'original' })}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                  previewingPrint.mode === 'original'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>Original Completa</span>
+              </button>
+            </div>
+
+            {/* Image container */}
+            <div className="flex-1 overflow-auto bg-slate-950 rounded-xl flex items-center justify-center p-2 min-h-[300px]">
+              <img
+                src={
+                  previewingPrint.mode === 'cropped'
+                    ? previewingPrint.print.croppedDataUrl
+                    : previewingPrint.print.originalDataUrl
+                }
+                alt="Visualização"
+                className="max-h-[60vh] max-w-full object-contain rounded-lg"
+              />
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setPreviewingPrint(null)}
+                className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal para Colar Lista de Itens */}

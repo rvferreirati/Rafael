@@ -186,17 +186,21 @@ export function generateSalesOrderPDF(order: SalesOrder, company: CompanyProfile
     doc.text('Assinatura Autorizada / Carimbo & Data', 14, signY + 4);
   }
 
-  // --- 7. Attached Image Page (Optional proof of order/receipt) ---
-  if (order.attachedImageUrl) {
+  // --- 7. Attached Image Pages (Optional proof of order/receipt prints) ---
+  const imagesToAttach = order.attachedImages && order.attachedImages.length > 0
+    ? order.attachedImages
+    : (order.attachedImageUrl ? [order.attachedImageUrl] : []);
+
+  imagesToAttach.forEach((imgData, idx) => {
     try {
       doc.addPage();
       doc.setFillColor(...brandColor);
       doc.rect(0, 0, 210, 5, 'F');
 
-      doc.setFontSize(14);
+      doc.setFontSize(13);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(30, 41, 59);
-      doc.text('ANEXO: COMPROVANTE / IMAGEM ORIGINAL DO PEDIDO', 14, 18);
+      doc.text(`ANEXO: PRINT / COMPROVANTE ${imagesToAttach.length > 1 ? `#${idx + 1}` : 'DO PEDIDO'}`, 14, 18);
 
       doc.setFontSize(8.5);
       doc.setFont('helvetica', 'normal');
@@ -207,11 +211,11 @@ export function generateSalesOrderPDF(order: SalesOrder, company: CompanyProfile
       doc.line(14, 28, 196, 28);
 
       // Embed image safely
-      doc.addImage(order.attachedImageUrl, 'PNG', 14, 32, 182, 240, undefined, 'FAST');
+      doc.addImage(imgData, 'PNG', 14, 32, 182, 240, undefined, 'FAST');
     } catch (err) {
-      console.warn('Não foi possível anexar imagem no PDF:', err);
+      console.warn(`Não foi possível anexar imagem #${idx + 1} no PDF:`, err);
     }
-  }
+  });
 
   if (shouldDownload) {
     const filename = `SalesOrder_${order.orderNumber || 'Draft'}.pdf`;

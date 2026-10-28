@@ -49,19 +49,26 @@ app.post('/api/ocr', async (req, res) => {
                 },
               },
               {
-                text: `Você é um especialista em extração de dados e OCR para pedidos de venda, notas fiscais, faturas e orçamentos.
-Analise com extrema precisão a imagem fornecida e extraia:
-1. "orderNumber": Número do pedido, fatura ou PO (ex: SO-1234, NF-9021). Se não encontrar, deixe vazio.
-2. "orderDate": Data de emissão no formato YYYY-MM-DD. Se não encontrar, deixe vazio.
-3. "customerName": Nome do cliente, razão social ou destinatário ("Bill To" / "Cliente").
-4. "customerTaxId": CNPJ, CPF ou Tax ID do cliente se visível.
-5. "items": Lista completa de TODOS os produtos, cosméticos, suprimentos, serviços e itens presentes na imagem (ex: "Top coat incolor", "Base bomba", "Removedor a base de acetona", etc).
+                text: `Você é um especialista em OCR e extração estruturada de itens para pedidos de venda.
+IMPORTANTE: A imagem pode ser uma captura de tela (print) de celular ou aplicativo.
+FOQUE EXCLUSIVAMENTE nos itens e produtos que estão NO MEIO DA TELA (área de conteúdo principal).
+Ignore completamente elementos de interface do smartphone como:
+- Barra de status superior (horário, bateria, Wi-Fi, 4G, 5G, ícones do sistema)
+- Cabeçalhos de topo de aplicativos (botão voltar, campo de pesquisa, títulos de tela)
+- Barras de navegação inferior e botões de ação ("Comprar", "Finalizar", "Adicionar ao carrinho", "Ver sacola")
+
+Extraia apenas os produtos reais no meio da tela (ex: "Top coat incolor", "Base bomba", "Removedor a base de acetona"):
+1. "orderNumber": Número do pedido ou fatura se houver.
+2. "orderDate": Data de emissão no formato YYYY-MM-DD se houver.
+3. "customerName": Nome do cliente ou destinatário se houver.
+4. "customerTaxId": CNPJ ou CPF se houver.
+5. "items": Lista dos produtos encontrados no meio da tela.
    Para cada item:
-   - "code": Código SKU ou número do item (ex: SKU-101 ou código do catálogo). Se não houver, crie um baseado no índice.
-   - "description": Nome ou descrição clara e completa do item exatamente como está na imagem.
-   - "quantity": Quantidade inteira ou decimal (padrão 1 se não especificado).
-   - "unitPrice": Preço unitário numérico (ex: 15.50). Se não houver preço visível, use 0.0.
-   - "total": Valor total daquele item (quantity * unitPrice).
+   - "code": Código SKU
+   - "description": Nome limpo e claro do produto
+   - "quantity": Quantidade inteira ou decimal (padrão 1)
+   - "unitPrice": Preço unitário numérico (ex: 15.00)
+   - "total": Valor total do item (quantity * unitPrice)
 
 Retorne a resposta estritamente em JSON compatível com o schema definido.`,
               },

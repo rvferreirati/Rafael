@@ -76,15 +76,27 @@ export function parseOCRText(rawText: string): ParsedOCRResult {
     'assina', 'signature', 'obrigado', 'volte sempre', 'cupom fiscal',
     'via do cliente', 'forma de pagamento', 'dinheiro', 'cartao', 'cartão',
     'debito', 'credito', 'troco', 'itens', 'produtos', 'quantidade', 'preco',
-    'unidade', 'descricao', 'descrição'
+    'unidade', 'descricao', 'descrição',
+    // Mobile screenshot UI noise words
+    'voltar', 'pesquisar', 'buscar', 'carrinho', 'menu', 'início', 'notificações',
+    'comprar', 'adicionar', 'finalizar', 'resumo', 'pagamento', 'frete', 'entrega',
+    'pix', 'boleto', 'parcelas', 'detalhes', 'chat', 'mensagens', 'conversas',
+    'bateria', 'carregador', 'status', 'configuracoes', 'configurações', 'ajuda'
   ];
 
-  // Helper to check if a line is a header or metadata line
+  // Helper to check if a line is a header, status bar or metadata line
   const isIgnoredLine = (line: string): boolean => {
     const lower = line.toLowerCase().trim();
     if (lower.length < 3) return true;
     if (/^[0-9\s.,\-_/:()]+$/.test(lower)) return true; // only numbers and symbols
-    return ignoredKeywords.some((kw) => lower.startsWith(kw) || lower === kw);
+    // Status bar clock like 10:54, 07:28, 12:00
+    if (/^(?:[01]?[0-9]|2[0-3]):[0-5][0-9](?:\s*[ap]m)?$/i.test(lower)) return true;
+    // Battery percentages like 80%, 100%
+    if (/^[0-9]{1,3}%$/.test(lower)) return true;
+    // Network carriers
+    if (/^(?:vivo|claro|tim|oi|4g|5g|lte|wifi|wi-fi)$/i.test(lower)) return true;
+
+    return ignoredKeywords.some((kw) => lower.startsWith(kw) || lower === kw || lower.includes('adicionar ao carrinho') || lower.includes('finalizar compra') || lower.includes('ir para o pagamento'));
   };
 
   const candidateLines = lines.filter((l) => !isIgnoredLine(l));
