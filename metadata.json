@@ -1,0 +1,6 @@
+{
+  "name": "SalesOrder Pro - OCR & Order Management",
+  "description": "Process invoices and quotes using OCR, create customizable sales orders, manage customers, and generate professional PDF documents.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
