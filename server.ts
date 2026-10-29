@@ -3,7 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
-import { matchItemWithCatalog } from './src/utils/productCatalog';
+import { matchItemWithCatalog, normalizeForComparison } from './src/utils/productCatalog';
 
 dotenv.config();
 
@@ -39,11 +39,15 @@ app.post('/api/ocr', async (req, res) => {
       { code: '14', name: 'Algodão bola 95 g', price: 5.0 },
       { code: '23', name: 'Rolo de Algodão 500 g', price: 20.0 },
       { code: '22', name: 'Protetor de bacia plástica Manic...', price: 5.2 },
-      { code: '56', name: 'Protetor de bacia pedicure com...', price: 11.5 },
+      { code: '56', name: 'Protetor de bacia pedicure com 50 unidades', price: 11.5 },
       { code: '66', name: 'Touca plástica descartável com...', price: 8.51 },
       { code: '17', name: 'Cílios Mix 8 a 14', price: 30.0 },
-      { code: '90', name: 'Cílios Magna D-lash Naturals Kn...', price: 12.0 },
+      { code: '90', name: 'Cílios Magina D-lash Naturals Knot-free flares 10 mm', price: 12.0 },
       { code: '34', name: 'Cílios Postiços 7P-C 14mm', price: 11.0 },
+      { code: '-', name: 'Secante rápido não oleoso com11 ml', price: 6.9 },
+      { code: '-', name: 'Colorama Boneca', price: 5.9 },
+      { code: '-', name: 'Bastão Inox c/ silicone ,Isis', price: 7.07 },
+      { code: '-', name: 'Palito para depilação com 100 unidades', price: 7.5 },
     ];
     const activeCatalog = Array.isArray(customCatalog) && customCatalog.length > 0 ? customCatalog : defaultDb;
     const catalogSummary = activeCatalog
@@ -84,35 +88,22 @@ app.post('/api/ocr', async (req, res) => {
 
     const promptText = `Você é um especialista de altíssima precisão em OCR visual e extração estruturada de produtos a partir de prints de tela de celular e carrinhos do WhatsApp.
 
-BANCO DE DADOS OFICIAL DE PRODUTOS PARA CONCILIAÇÃO:
+BANCO DE DADOS DE PRODUTOS PARA CONCILIAÇÃO:
 ${catalogSummary}
 
-REGRA CRÍTICA DE OURO - SÓ RETORNAR ITENS QUE ESTÃO NO BANCO DE DADOS:
-- Retorne EXCLUSIVAMENTE produtos que correspondam a produtos do BANCO DE DADOS OFICIAL acima.
-- NUNCA crie produtos a partir de valores de preço soltos (como "R$ 520", "5,20", "11,50").
-- NUNCA crie produtos a partir de botões ou links de categorias (como "Mostrar tudo", "Cílios Mostrar tudo", "Ver tudo", "Ver carrinho").
-- Se algo não for um produto do banco de dados, DESCARTE-O e NÃO o inclua na lista.
+SUA MISSÃO:
+- Extraia CADA PRODUTO de compra presente na imagem (descrição, quantidade e preço unitário).
+- Preste atenção: carrinhos contêm múltiplos produtos (3, 5, 8 ou mais). Extraia TODOS os produtos da lista, de cima a baixo da tela!
+- Use o BANCO DE DADOS acima para associar o código oficial (#47, #12, #56 ou '-') e o nome correto.
 
-ATENÇÃO MÁXIMA AO SUBTOTAL / TOTAL DO CARRINHO (Ex: "R$ 17,63"):
-- O valor no rodapé da tela ou resumo (ex: "Total: R$ 17,63", "Subtotal: R$ 17,63") é a SOMA dos produtos, NUNCA o preço de um item individual!
-- NUNCA atribua o valor do Subtotal (17,63) a nenhum produto como o Bloco Polidor.
-- O preço de tabela do Bloco Polidor no Banco de Dados é SEMPRE R$ 3,00.
-- O preço da Lixa mini canário é SEMPRE R$ 7,70.
-- O preço da Lixa moeda preta é SEMPRE R$ 6,93.
-- Use SEMPRE o preço unitário oficial de cada produto indicado no Banco de Dados acima.
+REGRA DE VALIDAÇÃO:
+- NUNCA crie produtos a partir de valores de preço soltos isolados (como "R$ 520").
+- NUNCA crie produtos a partir de botões ou links de categorias (como "Mostrar tudo", "Ver tudo", "Ver carrinho", "Continuar comprando").
+- Cada item deve ser um produto real (ex: Bloco Polidor, Algodão prensado, Secante rápido, Colorama Boneca, Protetor de bacia, Cílios, Bastão Inox, Palito para depilação).
 
-REGRA PARA NOMES TRUNCADOS / RETICÊNCIAS ("..."):
-- Os prints de celulares e WhatsApp frequentemente CORTAM os nomes dos produtos com "..." (exemplo: "Lixa mini canário pur..." ou "Lixa moeda preta po...").
-- Sempre que a imagem contiver um item cujo texto bate com o início ou palavras de um produto do BANCO DE DADOS acima, use:
-  1. "code": O código oficial do produto (ex: "#47", "#46", "#10", "#22", "#56").
-  2. "description": O nome COMPLETO oficial do banco de dados (ex: "Bloco Polidor", "Lixa mini canário pura arte com...", "Lixa moeda preta podóloga grão...", "Protetor de bacia pedicure com...").
-  3. "unitPrice": O valor unitário oficial daquele produto no banco de dados (ex: 3.00, 7.70, 6.93, 11.50).
-  4. "quantity": A quantidade informada no print (ex: 1, 2, etc.). Padrão 1.
-  5. "total": quantity * unitPrice.
-
-FILTROS DE RUÍDO:
-- NUNCA inclua cabeçalhos, botões ("Continuar comprando", "Subtotal", "Ver carrinho"), relógio ou status do celular.
-- Extraia cada produto único presente no carrinho.
+ATENÇÃO MÁXIMA AO SUBTOTAL / TOTAL DO CARRINHO:
+- Se houver um valor de subtotal no rodapé da tela, NUNCA o atribua como preço de um item individual.
+- Use a quantidade exibida no print (ex: "Quantidade: 1" -> 1).
 
 Retorne estritamente em JSON compatível com o schema definido.`;
 
@@ -200,11 +191,24 @@ Retorne estritamente em JSON compatível com o schema definido.`;
       const match = matchItemWithCatalog(desc, rawPrice, activeCatalog);
       
       if (match) {
-        const codeKey = `#${match.product.code}`;
+        const isNoCode = !match.product.code || match.product.code === '-';
+        const codeKey = isNoCode
+          ? '-'
+          : (match.product.code.startsWith('#') ? match.product.code : `#${match.product.code}`);
         
+        // CRITICAL: Unique key for deduplication
+        // If code is '-', deduplicate by product NAME so multiple items with code '-' are NOT dropped!
+        const uniqueKey = isNoCode
+          ? `name_${normalizeForComparison(match.product.name)}`
+          : `code_${match.product.code.toLowerCase()}`;
+
         // Deduplicate rows if same product is extracted multiple times from same print
-        if (seenCodes.has(codeKey)) {
-          const existing = reconciledItems.find((r) => r.code === codeKey);
+        if (seenCodes.has(uniqueKey)) {
+          const existing = reconciledItems.find((r) =>
+            isNoCode
+              ? normalizeForComparison(r.description) === normalizeForComparison(match.product.name)
+              : r.code === codeKey
+          );
           if (existing && it.quantity && Number(it.quantity) > existing.quantity) {
             existing.quantity = Number(it.quantity);
             existing.total = existing.quantity * existing.unitPrice;
@@ -223,7 +227,7 @@ Retorne estritamente em JSON compatível com o schema definido.`;
           unitPrice: p,
           total: q * p,
         });
-        seenCodes.add(codeKey);
+        seenCodes.add(uniqueKey);
       }
       // If it did NOT match the catalog (e.g. "R$ 520", "Cilios Mostrar tudo", etc.):
       // DO NOT INSERT! Strictly filter out non-database items as requested by user.

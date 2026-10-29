@@ -15,11 +15,15 @@ export const DEFAULT_CATALOG: CatalogProduct[] = [
   { code: '14', name: 'Algodão bola 95 g', price: 5.0 },
   { code: '23', name: 'Rolo de Algodão 500 g', price: 20.0 },
   { code: '22', name: 'Protetor de bacia plástica Manic...', price: 5.2 },
-  { code: '56', name: 'Protetor de bacia pedicure com...', price: 11.5 },
+  { code: '56', name: 'Protetor de bacia pedicure com 50 unidades', price: 11.5 },
   { code: '66', name: 'Touca plástica descartável com...', price: 8.51 },
   { code: '17', name: 'Cílios Mix 8 a 14', price: 30.0 },
-  { code: '90', name: 'Cílios Magna D-lash Naturals Kn...', price: 12.0 },
+  { code: '90', name: 'Cílios Magina D-lash Naturals Knot-free flares 10 mm', price: 12.0 },
   { code: '34', name: 'Cílios Postiços 7P-C 14mm', price: 11.0 },
+  { code: '-', name: 'Secante rápido não oleoso com11 ml', price: 6.9 },
+  { code: '-', name: 'Colorama Boneca', price: 5.9 },
+  { code: '-', name: 'Bastão Inox c/ silicone ,Isis', price: 7.07 },
+  { code: '-', name: 'Palito para depilação com 100 unidades', price: 7.5 },
 ];
 
 export function loadStoredCatalog(): CatalogProduct[] {
@@ -29,7 +33,8 @@ export function loadStoredCatalog(): CatalogProduct[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        // Merge with DEFAULT_CATALOG so any new base products are immediately available
+        return mergeCatalogProducts(DEFAULT_CATALOG, parsed);
       }
     }
   } catch (err) {
@@ -199,6 +204,8 @@ export function normalizeForComparison(str: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '') // remove diacritics
+    .replace(/([a-zà-ÿ])(\d)/gi, '$1 $2') // split "com11" -> "com 11"
+    .replace(/(\d)([a-zà-ÿ])/gi, '$1 $2') // split "11ml" -> "11 ml"
     .replace(/[\s.·=~–—\-:;,•\*\[\]\(\)\#\+]+/g, ' ') // replace symbols with space
     .trim();
 }
@@ -386,10 +393,23 @@ export function reconcileItemsWithCatalog<
 
     const match = matchItemWithCatalog(item.description, item.unitPrice, catalog);
     if (match) {
-      const codeKey = `#${match.product.code}`;
+      const isNoCode = !match.product.code || match.product.code === '-';
+      const codeKey = isNoCode
+        ? '-'
+        : (match.product.code.startsWith('#') ? match.product.code : `#${match.product.code}`);
+
+      // CRITICAL FIX: Unique key for deduplication
+      // If code is '-', deduplicate by product NAME so multiple items with code '-' are NEVER dropped!
+      const uniqueKey = isNoCode
+        ? `name_${normalizeForComparison(match.product.name)}`
+        : `code_${match.product.code.toLowerCase()}`;
 
       // Deduplicate: if this product was already added from this print, do not duplicate row
-      const existing = result.find((r) => r.code === codeKey);
+      const existing = result.find((r) =>
+        isNoCode
+          ? normalizeForComparison(r.description) === normalizeForComparison(match.product.name)
+          : r.code === codeKey
+      );
       if (existing) {
         if (item.quantity && item.quantity > existing.quantity) {
           existing.quantity = item.quantity;
@@ -399,7 +419,6 @@ export function reconcileItemsWithCatalog<
       }
 
       // ALWAYS USE OFFICIAL CATALOG PRICE as primary truth
-      // (This guarantees Bloco Polidor is R$ 3,00 and never 17.63 which is the subtotal)
       const officialPrice = match.product.price > 0 ? match.product.price : item.unitPrice;
       const qty = item.quantity && item.quantity > 0 ? item.quantity : 1;
 
@@ -410,7 +429,7 @@ export function reconcileItemsWithCatalog<
         unitPrice: officialPrice,
         total: qty * officialPrice,
       });
-      seenCodes.add(codeKey);
+      seenCodes.add(uniqueKey);
     } else if (!strictCatalogOnly) {
       result.push(item);
     }

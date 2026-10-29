@@ -73,6 +73,8 @@ interface CreateOrderTabProps {
   company: CompanyProfile;
   onSaveOrder: (order: SalesOrder) => void;
   onNavigateToCustomers: () => void;
+  catalog?: CatalogProduct[];
+  onUpdateCatalog?: (newCatalog: CatalogProduct[]) => void;
 }
 
 export type OrderFlowStep = 'upload' | 'items' | 'review';
@@ -96,13 +98,15 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   company,
   onSaveOrder,
   onNavigateToCustomers,
+  catalog: propCatalog,
+  onUpdateCatalog,
 }) => {
   // --- Active Step in Order Creation Flow ---
   const [activeStep, setActiveStep] = useState<OrderFlowStep>('upload');
 
   // --- Multi-Print Management State ---
   const [uploadedPrints, setUploadedPrints] = useState<UploadedPrint[]>([]);
-  const [focusMiddleScreen, setFocusMiddleScreen] = useState<boolean>(true); // Exclui topo (hora, bateria) e rodapé
+  const [focusMiddleScreen, setFocusMiddleScreen] = useState<boolean>(false); // Padrão imagem completa para não cortar produtos no topo ou rodapé
   const [accumulatePrints, setAccumulatePrints] = useState<boolean>(true);   // Acumula produtos dos prints
   const [previewingPrint, setPreviewingPrint] = useState<{ print: UploadedPrint; mode: 'cropped' | 'original' } | null>(null);
 
@@ -122,8 +126,16 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   const [custPhone, setCustPhone] = useState<string>('');
   const [custAddress, setCustAddress] = useState<string>('');
 
-  // Product Database / Catalog State
-  const [catalog, setCatalog] = useState<CatalogProduct[]>(loadStoredCatalog);
+  // Product Database / Catalog State (kept in sync with prop and localStorage)
+  const [catalog, setCatalog] = useState<CatalogProduct[]>(() => {
+    return propCatalog && propCatalog.length > 0 ? propCatalog : loadStoredCatalog();
+  });
+
+  useEffect(() => {
+    if (propCatalog && propCatalog.length > 0) {
+      setCatalog(propCatalog);
+    }
+  }, [propCatalog]);
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState<boolean>(false);
 
   // Line items (extracted from prints and fully editable)
@@ -503,6 +515,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       ? printItem.croppedDataUrl
       : printItem.originalDataUrl;
 
+    const activeCatalog = catalog && catalog.length > 0 ? catalog : loadStoredCatalog();
     const mime = printItem.isPdf ? 'application/pdf' : 'image/jpeg';
 
     if (ocrEngine === 'ai' || printItem.isPdf) {
@@ -515,7 +528,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             imageBase64: imageToSend,
             mimeType: mime,
             filterMiddleOnly: printItem.useMiddleCrop,
-            catalog,
+            catalog: activeCatalog,
           }),
         });
 
@@ -527,14 +540,14 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
               const p = Number(it.unitPrice) || 0;
               return {
                 id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 4)}-${index}`,
-                code: it.code || `SKU-${1000 + index}`,
+                code: it.code || '-',
                 description: it.description || 'Produto extraído',
                 quantity: q,
                 unitPrice: p,
                 total: it.total ? Number(it.total) : q * p,
               };
             });
-            const reconciled = reconcileItemsWithCatalog(mapped, catalog);
+            const reconciled = reconcileItemsWithCatalog(mapped, activeCatalog);
             return {
               items: reconciled,
               orderNum: data.orderNumber,
@@ -551,7 +564,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       try {
         const localItems = await runClientSideTesseract(imageToSend);
         if (localItems.length > 0) {
-          return { items: reconcileItemsWithCatalog(localItems, catalog) };
+          return { items: reconcileItemsWithCatalog(localItems, activeCatalog) };
         }
       } catch (err) {
         console.warn('Tesseract fallback falhou:', err);

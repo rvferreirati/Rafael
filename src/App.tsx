@@ -204,6 +204,8 @@ export default function App() {
             company={company}
             onSaveOrder={handleSaveOrder}
             onNavigateToCustomers={() => setActiveTab('customers')}
+            catalog={catalog}
+            onUpdateCatalog={setCatalog}
           />
         )}
 
