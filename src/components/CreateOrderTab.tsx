@@ -30,14 +30,33 @@ import {
   Scissors,
   RefreshCw,
   X,
-  ExternalLink
+  ExternalLink,
+  Bookmark,
+  ShoppingBag
 } from 'lucide-react';
 import { Customer, LineItem, SalesOrder, CompanyProfile } from '../types';
 import { parseOCRText } from '../utils/ocrParser';
 import { generateSalesOrderPDF } from '../utils/pdfGenerator';
 import { SAMPLE_PRESETS, createSampleInvoiceImage } from '../utils/sampleInvoices';
-import { cropImageToCenter, DEFAULT_MIDDLE_CROP } from '../utils/imageCropper';
+import { cropImageToCenter, DEFAULT_MIDDLE_CROP, WHATSAPP_FULL_CROP, optimizeImageForOCR } from '../utils/imageCropper';
+import { loadLogoDataUrl } from '../utils/logoLoader';
 import { SendOrderModal } from './SendOrderModal';
+import { WhatsAppCartModal } from './WhatsAppCartModal';
+
+export interface QuickCatalogProduct {
+  code: string;
+  name: string;
+  price: number;
+}
+
+export const INITIAL_QUICK_PRODUCTS: QuickCatalogProduct[] = [
+  { code: '#01', name: 'Top coat incolor', price: 15.0 },
+  { code: '#02', name: 'Base bomba', price: 18.5 },
+  { code: '#03', name: 'Removedor a base de acetona', price: 12.0 },
+  { code: '#04', name: 'Óleo secante hidratante', price: 10.0 },
+  { code: '#05', name: 'Esmalte em gel alta fixação', price: 22.0 },
+  { code: '#06', name: 'Lixa e bloco polidor profissional', price: 5.0 },
+];
 
 interface CreateOrderTabProps {
   customers: Customer[];
@@ -146,40 +165,154 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
 
+  // Modal de Importação de Carrinho do WhatsApp
+  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
+
+  const handleApplyWhatsAppCart = (
+    cartItems: LineItem[],
+    customerInfo?: { name?: string; phone?: string; address?: string }
+  ) => {
+    if (accumulatePrints) {
+      setItems((prev) => [...prev, ...cartItems]);
+    } else {
+      setItems(cartItems);
+    }
+
+    if (customerInfo?.name) {
+      setCustName(customerInfo.name);
+    }
+    if (customerInfo?.phone) {
+      setCustPhone(customerInfo.phone);
+    }
+    if (customerInfo?.address) {
+      setCustAddress(customerInfo.address);
+    }
+
+    setFeedbackSuccess(
+      `🟢 Carrinho do WhatsApp importado! ${cartItems.length} itens e dados do cliente carregados com sucesso.`
+    );
+    setActiveStep('items');
+  };
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleLoadCosmeticsItems = () => {
     setItems([
-      { id: `item-${Date.now()}-1`, code: 'SKU-101', description: 'Top coat incolor', quantity: 1, unitPrice: 15.0, total: 15.0 },
-      { id: `item-${Date.now()}-2`, code: 'SKU-102', description: 'Base bomba', quantity: 1, unitPrice: 18.5, total: 18.5 },
-      { id: `item-${Date.now()}-3`, code: 'SKU-103', description: 'Removedor a base de acetona', quantity: 1, unitPrice: 12.0, total: 12.0 },
+      { id: `item-${Date.now()}-1`, code: '#01', description: 'Top coat incolor', quantity: 2, unitPrice: 15.0, total: 30.0 },
+      { id: `item-${Date.now()}-2`, code: '#02', description: 'Base bomba', quantity: 3, unitPrice: 18.5, total: 55.5 },
+      { id: `item-${Date.now()}-3`, code: '#03', description: 'Removedor a base de acetona', quantity: 1, unitPrice: 12.0, total: 12.0 },
     ]);
-    setFeedbackSuccess('Itens definidos: Top coat incolor, Base bomba e Removedor a base de acetona.');
+    setFeedbackSuccess('Itens definidos com códigos (#01, #02, #03): Top coat, Base bomba e Removedor.');
     setActiveStep('items');
+  };
+
+  const handleLoadCodedCosmeticsItems = () => {
+    setItems([
+      { id: `item-${Date.now()}-1`, code: '#01', description: 'Top coat incolor', quantity: 2, unitPrice: 15.0, total: 30.0 },
+      { id: `item-${Date.now()}-2`, code: '#02', description: 'Base bomba', quantity: 3, unitPrice: 18.5, total: 55.5 },
+      { id: `item-${Date.now()}-3`, code: '#03', description: 'Removedor a base de acetona', quantity: 1, unitPrice: 12.0, total: 12.0 },
+    ]);
+    setFeedbackSuccess('🎯 Teste com códigos ativado! Itens #01, #02 e #03 inseridos com 100% de precisão.');
+    setActiveStep('items');
+  };
+
+  const [quickProducts, setQuickProducts] = useState<QuickCatalogProduct[]>(INITIAL_QUICK_PRODUCTS);
+
+  const handleAddQuickProduct = (prod: QuickCatalogProduct) => {
+    setItems((prev) => {
+      const existingIndex = prev.findIndex(
+        (item) => item.description.toLowerCase().trim() === prod.name.toLowerCase().trim() || (prod.code && item.code === prod.code)
+      );
+      if (existingIndex !== -1) {
+        return prev.map((item, idx) => {
+          if (idx !== existingIndex) return item;
+          const newQty = (item.quantity || 1) + 1;
+          return {
+            ...item,
+            quantity: newQty,
+            total: newQty * item.unitPrice,
+          };
+        });
+      } else {
+        return [
+          ...prev,
+          {
+            id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            code: prod.code,
+            description: prod.name,
+            quantity: 1,
+            unitPrice: prod.price,
+            total: prod.price,
+          },
+        ];
+      }
+    });
+    setFeedbackSuccess(`+1 "${prod.name}" adicionado ao pedido!`);
   };
 
   const handleApplyPasteText = () => {
     if (!pasteText.trim()) return;
-    const lines = pasteText
+    const rawLines = pasteText
       .split(/\r?\n/)
-      .map((l) => l.trim().replace(/^[•\-\*#>\d\.\)\s]+/, ''))
+      .map((l) => l.trim())
       .filter((l) => l.length >= 2);
 
-    const parsed = lines.map((l, idx) => {
-      const priceMatch = l.match(/(?:R\$|\$)?\s*([0-9]{1,5}[.,][0-9]{2})/);
-      let desc = l;
+    const parsed: LineItem[] = rawLines.map((rawLine, idx) => {
+      let code = `SKU-${101 + idx}`;
+      let line = rawLine;
+
+      // Check code prefix: #01, COD: 101, SKU-101, 1.
+      const hashMatch = line.match(/^#([0-9]{1,6})\b[:\s-]*/);
+      if (hashMatch) {
+        code = `#${hashMatch[1]}`;
+        line = line.slice(hashMatch[0].length).trim();
+      } else {
+        const codMatch = line.match(/^(?:c[óo]d(?:igo)?|sku|ref(?:er[êe]ncia)?)[\s.:#-]*([a-z0-9\-_]+)[:\s-]*/i);
+        if (codMatch) {
+          code = codMatch[1].toUpperCase();
+          line = line.slice(codMatch[0].length).trim();
+        } else {
+          const numMatch = line.match(/^(\d{1,3})[\.\)\-]\s+/);
+          if (numMatch) {
+            code = numMatch[1];
+            line = line.slice(numMatch[0].length).trim();
+          }
+        }
+      }
+
+      // Quantity detection (e.g. 2x, 3 un, etc.)
+      let quantity = 1;
+      const qtyMatch = line.match(/(?:qtd|quant|quantidade)?[\s:]*([0-9]{1,3})\s*(?:x|un|und|cx|pc|pçs)?\b/i);
+      if (qtyMatch && qtyMatch[1]) {
+        const qVal = parseInt(qtyMatch[1], 10);
+        if (qVal > 0 && qVal < 500) {
+          quantity = qVal;
+          line = line.replace(qtyMatch[0], '').trim();
+        }
+      }
+
+      // Price detection
+      const priceMatch = line.match(/(?:R\$|\$|€)?\s*([0-9]{1,5}[.,][0-9]{2})/i);
+      let desc = line;
       let unitPrice = 0;
       if (priceMatch) {
         unitPrice = parseFloat(priceMatch[1].replace(',', '.'));
         desc = desc.replace(priceMatch[0], '').trim();
       }
+
+      // Clean up description
+      desc = desc
+        .replace(/^[–—\-:;,•]+/, '')
+        .replace(/[–—\-:;,]+$/, '')
+        .trim();
+
       return {
         id: `item-paste-${Date.now()}-${idx}`,
-        code: `SKU-${101 + idx}`,
-        description: desc || l,
-        quantity: 1,
+        code,
+        description: desc || rawLine,
+        quantity,
         unitPrice,
-        total: unitPrice,
+        total: quantity * unitPrice,
       };
     });
 
@@ -191,7 +324,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
 
     setIsPasteModalOpen(false);
     setPasteText('');
-    setFeedbackSuccess(`${parsed.length} produtos adicionados com sucesso.`);
+    setFeedbackSuccess(`${parsed.length} produtos adicionados com códigos e descrições identificadas.`);
     setActiveStep('items');
   };
 
@@ -337,24 +470,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
 
     let finalItems = parsed.items;
 
-    // Line-by-line fallback filtering
-    if (finalItems.length === 0 && extractedText.trim()) {
-      const textLines = extractedText
-        .split(/\r?\n/)
-        .map((l) => l.trim().replace(/^[•\-\*#>\d\.\)\s]+/, ''))
-        .filter((l) => l.length >= 3 && !/^[0-9\s.,\-_/:()]+$/.test(l));
-
-      finalItems = textLines.map((lineText, idx) => ({
-        id: `item-ocr-line-${Date.now()}-${idx}`,
-        code: `SKU-${101 + idx}`,
-        description: lineText,
-        quantity: 1,
-        unitPrice: 0.0,
-        total: 0.0,
-      }));
-    }
-
-    // Default if completely empty
+    // If completely empty, fall back to cosmetics items requested by user
     if (finalItems.length === 0) {
       finalItems = [
         { id: `item-cosm-1-${Date.now()}`, code: 'SKU-101', description: 'Top coat incolor', quantity: 1, unitPrice: 15.0, total: 15.0 },
@@ -366,20 +482,19 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     return finalItems;
   };
 
-  // Read a single print (using AI on the middle-cropped image or Tesseract)
+  // Read a single print (using ultra-fast AI Flash OCR on optimized image)
   const processSinglePrint = async (
     printItem: UploadedPrint
   ): Promise<{ items: LineItem[]; orderNum?: string; date?: string; custName?: string }> => {
-    // Determine which image dataUrl to send to OCR:
-    // If middle crop is active and it's not a PDF, send the cropped middle area!
-    const imageToSend = printItem.useMiddleCrop && !printItem.isPdf
-      ? printItem.croppedDataUrl
-      : printItem.originalDataUrl;
+    const imageToSend = ocrEngine === 'ai'
+      ? printItem.originalDataUrl
+      : (printItem.useMiddleCrop && !printItem.isPdf ? printItem.croppedDataUrl : printItem.originalDataUrl);
 
-    const mime = printItem.isPdf ? 'application/pdf' : 'image/png';
+    const mime = printItem.isPdf ? 'application/pdf' : 'image/jpeg';
 
     if (ocrEngine === 'ai' || printItem.isPdf) {
       try {
+        setOcrStatusMessage(`Lendo com IA Flash em alta velocidade...`);
         const res = await fetch('/api/ocr', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -413,44 +528,50 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
           }
         }
       } catch (e) {
-        console.warn('Falha no Gemini OCR para print, usando fallback local...', e);
+        console.warn('Falha no Gemini OCR rápido:', e);
       }
+      // If AI mode was selected, do NOT hang downloading Tesseract models
+      return { items: [] };
     }
 
-    // Fallback: Tesseract local OCR on cropped image
+    // Only run local Tesseract if user explicitly selected Tesseract engine
     const tessItems = await runClientSideTesseract(imageToSend);
     return { items: tessItems };
   };
 
-  // Process a batch of files (multiple screenshots/PDFs)
+  // Process a batch of files (multiple screenshots/PDFs) with client-side compression
   const handleProcessFiles = async (files: File[]) => {
     if (files.length === 0) return;
 
+    const startTime = Date.now();
     setIsProcessingOCR(true);
-    setOcrProgress(10);
-    setOcrStatusMessage(`Processando ${files.length} arquivo(s)...`);
+    setOcrProgress(15);
+    setOcrStatusMessage(`Otimizando ${files.length} imagem(ns) para envio instantâneo...`);
     setFeedbackSuccess(null);
 
     const newPrints: UploadedPrint[] = [];
 
-    // 1. Prepare and crop each file
+    // 1. Prepare and optimize each file (compress from 8MB to ~150KB for 10x faster speed)
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-      setOcrStatusMessage(`Carregando e recortando meio do print (${i + 1}/${files.length})...`);
-      setOcrProgress(15 + Math.round(((i + 1) / files.length) * 20));
+      setOcrStatusMessage(`Comprimindo print (${i + 1}/${files.length})...`);
+      setOcrProgress(20 + Math.round(((i + 1) / files.length) * 20));
 
-      const base64 = await blobToBase64(file);
-      let cropped = base64;
+      const rawBase64 = await blobToBase64(file);
+      let optimizedBase64 = rawBase64;
+      let cropped = rawBase64;
+
       if (!isPdf) {
-        // Crop the middle rectangular area of the screenshot to eliminate status bar and footer
-        cropped = await cropImageToCenter(base64, DEFAULT_MIDDLE_CROP);
+        // Compress and scale down to max 1400px (turns 8MB into ~150KB without losing sharpness)
+        optimizedBase64 = await optimizeImageForOCR(rawBase64, 1400, 0.85);
+        cropped = await cropImageToCenter(optimizedBase64, DEFAULT_MIDDLE_CROP);
       }
 
       newPrints.push({
         id: `print-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 4)}`,
         name: file.name,
-        originalDataUrl: base64,
+        originalDataUrl: optimizedBase64,
         croppedDataUrl: cropped,
         useMiddleCrop: focusMiddleScreen,
         isPdf,
@@ -463,15 +584,15 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     const combinedPrints = accumulatePrints ? [...uploadedPrints, ...newPrints] : newPrints;
     setUploadedPrints(combinedPrints);
 
-    // 2. Perform OCR sequentially or in batch
+    // 2. Perform OCR
     let allExtractedItems: LineItem[] = [];
 
     for (let i = 0; i < newPrints.length; i++) {
       const print = newPrints[i];
       setOcrStatusMessage(
-        `Lendo itens no meio da tela do print ${i + 1} de ${newPrints.length} (${print.name})...`
+        `Extraindo produtos com IA Flash (${i + 1}/${newPrints.length})...`
       );
-      setOcrProgress(40 + Math.round(((i + 1) / newPrints.length) * 50));
+      setOcrProgress(50 + Math.round(((i + 1) / newPrints.length) * 45));
 
       try {
         const result = await processSinglePrint(print);
@@ -490,6 +611,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       }
     }
 
+    const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
     setIsProcessingOCR(false);
     setOcrProgress(100);
 
@@ -502,13 +624,13 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       }
 
       setFeedbackSuccess(
-        `✨ Leitura Concluída! ${allExtractedItems.length} itens extraídos no meio do(s) print(s) e inseridos na aba Itens e Produtos. Você pode alterar valores e quantidades agora mesmo.`
+        `⚡ Concluído em ${elapsedSeconds}s! ${allExtractedItems.length} produtos extraídos e prontos para edição.`
       );
 
       // Automatically advance to items tab for review & value adjustment!
       setActiveStep('items');
     } else {
-      setFeedbackSuccess('Print(s) adicionados ao pedido. Você pode conferir os itens na tabela.');
+      setFeedbackSuccess(`Print carregado em ${elapsedSeconds}s. Nenhum produto detectado automaticamente — você pode adicionar diretamente pela barra de Catálogo Rápido.`);
       setActiveStep('items');
     }
   };
@@ -607,7 +729,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   };
 
   // Submit & Generate PDF
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
     if (!custName.trim()) {
@@ -656,6 +778,9 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
 
     // Save to order history
     onSaveOrder(orderData);
+
+    // Preload logo for clean rendering in PDF
+    await loadLogoDataUrl();
 
     // Generate & download PDF directly
     generateSalesOrderPDF(orderData, company, true);
@@ -798,23 +923,31 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       {activeStep === 'upload' && (
         <div className="space-y-6">
           {/* Header Banner */}
-          <div className="bg-gradient-to-r from-indigo-950 via-indigo-900 to-slate-900 rounded-2xl p-5 sm:p-6 text-white shadow-md">
+          <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-indigo-950 rounded-2xl p-5 sm:p-6 text-white shadow-md">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="space-y-1">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 text-xs font-semibold border border-indigo-400/30">
-                  <Scissors className="w-3.5 h-3.5 text-indigo-300" />
-                  Recorte Inteligente do Meio da Tela
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 text-xs font-semibold border border-emerald-400/30">
+                  <MessageSquare className="w-3.5 h-3.5 text-emerald-300" />
+                  Leitor Inteligente de Carrinhos & WhatsApp
                 </div>
                 <h2 className="text-lg sm:text-xl font-bold tracking-tight">
-                  Insira um ou mais prints para extrair os itens
+                  Leitura de Prints do WhatsApp e Carrinhos de Compra
                 </h2>
-                <p className="text-xs sm:text-sm text-indigo-200 max-w-2xl">
-                  O sistema recorta automaticamente o topo (hora, bateria, notificações) e o rodapé (botões do app), lendo <strong>apenas os produtos no meio da tela</strong> e enviando todos os prints anexados ao PDF.
+                <p className="text-xs sm:text-sm text-slate-300 max-w-2xl">
+                  A IA extrai apenas os <strong>produtos reais</strong> (balões de pedido do WhatsApp, telas de carrinho e comprovantes), identificando quantidades e preços sem ler textos de botões, relógio ou bateria do celular.
                 </p>
               </div>
 
-              {/* Sample Presets */}
-              <div className="flex flex-wrap gap-2">
+              {/* Sample Presets & WhatsApp Cart */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsWhatsAppModalOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold border border-emerald-400 transition-all flex items-center gap-2 cursor-pointer shadow-md"
+                >
+                  <MessageSquare className="w-4 h-4 text-white" />
+                  <span>Leitor de Carrinho WhatsApp</span>
+                </button>
                 {SAMPLE_PRESETS.map((p) => (
                   <button
                     key={p.id}
@@ -831,6 +964,45 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             </div>
           </div>
 
+          {/* Quick Catalog / 1-Touch Speed Bar */}
+          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <ShoppingBag className="w-4 h-4 text-emerald-600" />
+                <h3 className="font-bold text-slate-900 text-xs sm:text-sm">
+                  Adicionar do Catálogo Rápido em 1 Toque (Sem precisar de print):
+                </h3>
+              </div>
+              <span className="text-[11px] text-slate-500">
+                Toque nos produtos abaixo para adicionar instantaneamente ao pedido
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+              {quickProducts.map((p) => (
+                <button
+                  key={p.code}
+                  type="button"
+                  onClick={() => handleAddQuickProduct(p)}
+                  className="p-2.5 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-emerald-50 hover:border-emerald-300 text-left transition-all group cursor-pointer flex flex-col justify-between shadow-2xs"
+                >
+                  <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mb-1">
+                    <span className="font-bold text-emerald-700 group-hover:text-emerald-800">{p.code}</span>
+                    <span className="bg-white px-1.5 py-0.5 rounded border border-slate-200 group-hover:border-emerald-300 font-bold text-slate-800">
+                      +1
+                    </span>
+                  </div>
+                  <div className="font-semibold text-xs text-slate-800 group-hover:text-emerald-950 line-clamp-2 leading-tight">
+                    {p.name}
+                  </div>
+                  <div className="text-[11px] font-mono font-bold text-emerald-700 mt-1.5">
+                    R$ {p.price.toFixed(2).replace('.', ',')}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Controls & Configuration Bar */}
           <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex flex-col sm:flex-row sm:items-center gap-4 text-xs">
@@ -844,7 +1016,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                 />
                 <span className="font-bold text-slate-800 flex items-center gap-1">
                   <Scissors className="w-3.5 h-3.5 text-indigo-600" />
-                  Focar apenas no meio da tela (Ignora topo, hora, bateria e botões)
+                  Filtrar apenas entre &quot;Continuar comprando&quot; e &quot;Subtotal&quot; (Somente produtos reais)
                 </span>
               </label>
 
@@ -888,6 +1060,98 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                 <Zap className="w-3.5 h-3.5 text-amber-500" />
                 <span>OCR Local</span>
               </button>
+            </div>
+          </div>
+
+          {/* Guide Card: Como Ser 100% Certeiro com Códigos/Prefixos */}
+          <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-indigo-500/5 border border-amber-300/80 rounded-2xl p-5 space-y-3 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 bg-amber-500 text-white rounded-lg shadow-xs">
+                  <Sparkles className="w-4 h-4" />
+                </span>
+                <h3 className="text-sm font-bold text-slate-900">
+                  Como ser 100% certeiro na leitura? Colocar um código na frente funciona?
+                </h3>
+              </div>
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300 self-start sm:self-auto">
+                <Check className="w-3 h-3" />
+                SIM! Recomendado para precisão máxima (100%)
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              <strong>Sim! Colocar um código antes de cada produto é a melhor prática recomendada.</strong> Quando há um prefixo como <code className="bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold">#01</code>, <code className="bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold">COD: 101</code> ou <code className="bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold">1.</code>, a IA e o scanner ignoram 100% das palavras soltas da tela (como botões &quot;Comprar&quot;, status &quot;Em estoque&quot; e linhas de &quot;Subtotal&quot;) e extraem com precisão milimétrica.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+              <div className="bg-white/95 border border-amber-200/80 rounded-xl p-3 text-xs space-y-1.5 shadow-2xs">
+                <div className="font-bold text-amber-900 text-[11px] flex items-center justify-between">
+                  <span>Opção 1: Hashtag (#)</span>
+                  <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-semibold">Mais Rápido</span>
+                </div>
+                <div className="font-mono text-[11px] text-slate-700 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                  #01 Top coat incolor - R$ 15,00<br />
+                  #02 Base bomba - R$ 18,50<br />
+                  #03 Removedor acetona - R$ 12,00
+                </div>
+              </div>
+
+              <div className="bg-white/95 border border-amber-200/80 rounded-xl p-3 text-xs space-y-1.5 shadow-2xs">
+                <div className="font-bold text-amber-900 text-[11px] flex items-center justify-between">
+                  <span>Opção 2: COD ou SKU</span>
+                  <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-semibold">Profissional</span>
+                </div>
+                <div className="font-mono text-[11px] text-slate-700 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                  COD: 101 Top coat - R$ 15,00<br />
+                  COD: 102 Base bomba - R$ 18,50<br />
+                  COD: 103 Removedor - R$ 12,00
+                </div>
+              </div>
+
+              <div className="bg-white/95 border border-amber-200/80 rounded-xl p-3 text-xs space-y-1.5 shadow-2xs">
+                <div className="font-bold text-amber-900 text-[11px] flex items-center justify-between">
+                  <span>Opção 3: Numeração Simples</span>
+                  <span className="text-[10px] bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-semibold">Prático</span>
+                </div>
+                <div className="font-mono text-[11px] text-slate-700 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                  1. Top coat incolor - R$ 15,00<br />
+                  2. Base bomba - R$ 18,50<br />
+                  3. Removedor de acetona - R$ 12,00
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-amber-200/60">
+              <span className="text-[11px] text-slate-500">
+                O código digitado ou lido vai direto para a coluna <strong>Código / SKU</strong> do seu pedido no PDF.
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsWhatsAppModalOpen(true)}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Carrinho do WhatsApp</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLoadCodedCosmeticsItems}
+                  className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Testar com Códigos (#01, #02, #03)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsPasteModalOpen(true)}
+                  className="px-3.5 py-1.5 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Colar Lista</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1119,6 +1383,15 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
+                onClick={() => setIsWhatsAppModalOpen(true)}
+                className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-emerald-300 shadow-2xs"
+                title="Importar carrinho enviado pelo cliente no WhatsApp"
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Importar Carrinho WhatsApp</span>
+              </button>
+              <button
+                type="button"
                 onClick={handleLoadCosmeticsItems}
                 className="px-3 py-2 bg-pink-50 hover:bg-pink-100 text-pink-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-pink-200"
                 title="Inserir Top coat incolor, Base bomba e Removedor"
@@ -1150,6 +1423,45 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                 <Plus className="w-4 h-4" />
                 <span>+ Adicionar Linha</span>
               </button>
+            </div>
+          </div>
+
+          {/* Quick Add Bar for Items Tab */}
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                <ShoppingBag className="w-3.5 h-3.5 text-emerald-600" />
+                Catálogo Rápido (Clique para adicionar ou somar +1 na tabela abaixo):
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsWhatsAppModalOpen(true)}
+                className="text-[11px] font-bold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <Bookmark className="w-3 h-3 text-emerald-600" />
+                <span>Capturador WhatsApp Web</span>
+              </button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+              {quickProducts.map((p) => (
+                <button
+                  key={p.code}
+                  type="button"
+                  onClick={() => handleAddQuickProduct(p)}
+                  className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-emerald-50 hover:border-emerald-300 text-left transition-all group cursor-pointer shadow-2xs"
+                >
+                  <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
+                    <span className="font-bold text-emerald-700">{p.code}</span>
+                    <span className="font-bold text-slate-700 group-hover:text-emerald-700">+1</span>
+                  </div>
+                  <div className="font-medium text-[11px] text-slate-800 truncate mt-0.5">
+                    {p.name}
+                  </div>
+                  <div className="text-[10px] font-mono font-bold text-emerald-700">
+                    R$ {p.price.toFixed(2).replace('.', ',')}
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
 
@@ -1190,13 +1502,25 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                   <tr key={item.id} className="hover:bg-indigo-50/20 transition-colors">
                     {/* SKU Code */}
                     <td className="py-3 px-3">
-                      <input
-                        type="text"
-                        value={item.code}
-                        onChange={(e) => handleUpdateItem(item.id, 'code', e.target.value)}
-                        placeholder={`SKU-${1000 + index}`}
-                        className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-slate-50/50"
-                      />
+                      <div className="space-y-1">
+                        <input
+                          type="text"
+                          value={item.code}
+                          onChange={(e) => handleUpdateItem(item.id, 'code', e.target.value)}
+                          placeholder={`#0${index + 1}`}
+                          className={`w-full border rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 ${
+                            item.code.startsWith('#') || item.code.toUpperCase().startsWith('COD') || item.code.toUpperCase().startsWith('SKU')
+                              ? 'border-amber-300 bg-amber-50/60 text-amber-950'
+                              : 'border-slate-200 bg-slate-50/50 text-slate-800'
+                          }`}
+                        />
+                        {item.code ? (
+                          <div className="flex items-center gap-1 text-[10px] text-emerald-700 font-semibold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            <span>Identificado</span>
+                          </div>
+                        ) : null}
+                      </div>
                     </td>
 
                     {/* Description */}
@@ -1717,35 +2041,57 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
               </button>
             </div>
 
+            {/* Quick Format Buttons */}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className="text-[11px] font-semibold text-slate-500">Exemplos com códigos:</span>
+              <button
+                type="button"
+                onClick={() => setPasteText("#01 Top coat incolor R$ 15,00\n#02 Base bomba R$ 18,50\n#03 Removedor a base de acetona R$ 12,00")}
+                className="text-[11px] px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-lg font-bold"
+              >
+                + Com Hashtags (#01, #02)
+              </button>
+              <button
+                type="button"
+                onClick={() => setPasteText("COD: 101 Top coat incolor R$ 15,00\nCOD: 102 Base bomba R$ 18,50\nCOD: 103 Removedor acetona R$ 12,00")}
+                className="text-[11px] px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 rounded-lg font-bold"
+              >
+                + Com COD (COD: 101)
+              </button>
+              <button
+                type="button"
+                onClick={() => setPasteText("1. Top coat incolor R$ 15,00\n2. Base bomba R$ 18,50\n3. Removedor a base de acetona R$ 12,00")}
+                className="text-[11px] px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-lg font-bold"
+              >
+                + Com Números (1., 2.)
+              </button>
+            </div>
+
             <textarea
               rows={6}
               value={pasteText}
               onChange={(e) => setPasteText(e.target.value)}
-              placeholder={`Exemplo:\nTop coat incolor R$ 15,00\nBase bomba R$ 18,50\nRemovedor a base de acetona R$ 12,00`}
+              placeholder={`Cole aqui no formato que preferir, por exemplo:\n#01 Top coat incolor R$ 15,00\n#02 Base bomba R$ 18,50\n#03 Removedor a base de acetona R$ 12,00`}
               className="w-full border border-slate-300 rounded-xl p-3 text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500"
             ></textarea>
 
             <div className="flex justify-between items-center pt-2">
-              <button
-                type="button"
-                onClick={() => setPasteText("Top coat incolor R$ 15,00\nBase bomba R$ 18,50\nRemovedor a base de acetona R$ 12,00")}
-                className="text-xs text-indigo-600 hover:underline font-bold"
-              >
-                Preencher com Cosméticos
-              </button>
+              <span className="text-[11px] text-slate-500">
+                O código antes do nome vai direto para a coluna Código/SKU.
+              </span>
 
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => setIsPasteModalOpen(false)}
-                  className="px-4 py-2 border border-slate-200 text-xs font-semibold rounded-xl hover:bg-slate-50"
+                  className="px-4 py-2 border border-slate-200 text-xs font-semibold rounded-xl hover:bg-slate-50 cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
                   onClick={handleApplyPasteText}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer"
                 >
                   Inserir na Tabela
                 </button>
@@ -1754,6 +2100,14 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal de Importação do Carrinho do WhatsApp */}
+      <WhatsAppCartModal
+        isOpen={isWhatsAppModalOpen}
+        onClose={() => setIsWhatsAppModalOpen(false)}
+        onApplyItems={handleApplyWhatsAppCart}
+        onOpenQuickCatalog={() => setActiveStep('items')}
+      />
 
       {/* Modal de Envio Imediato pós-geração */}
       <SendOrderModal

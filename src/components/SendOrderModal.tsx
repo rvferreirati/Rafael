@@ -57,7 +57,7 @@ ${itemsList}
 ${order.discountRate > 0 ? `🏷️ *Desconto (${order.discountRate}%):* -${currency} ${order.discountAmount.toFixed(2)}\n` : ''}${order.taxRate > 0 ? `🏛️ *Impostos (${order.taxRate}%):* +${currency} ${order.taxAmount.toFixed(2)}\n` : ''}⭐ *TOTAL GERAL: ${currency} ${order.grandTotal.toFixed(2)}*
 
 ${order.notes ? `📝 *Observações:* ${order.notes}\n` : ''}
-📄 Documento oficial em PDF gerado via SalesOrder Pro.`;
+📄 Documento oficial em PDF gerado via ARTEX7.`;
   };
 
   const handleCopyMessage = () => {

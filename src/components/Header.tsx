@@ -22,19 +22,16 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
-          {/* Logo Brand */}
+          {/* Logo Brand ARTEX7 */}
           <div className="flex items-center space-x-3 cursor-pointer" onClick={() => onTabChange('create-order')}>
-            <div className="bg-indigo-600 text-white p-2 rounded-xl font-bold text-lg leading-none shadow-sm flex items-center justify-center">
-              <FileCheck2 className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="text-xl font-bold tracking-tight text-slate-900">
-                SalesOrder<span className="text-indigo-600">Pro</span>
-              </span>
-              <span className="hidden sm:inline-block ml-2 text-[11px] font-semibold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-100">
-                OCR & PDF
-              </span>
-            </div>
+            <img
+              src="/assets/aistudio/Logo_ARtex7_em_Preto_254e2cb7.png"
+              alt="ARTEX7"
+              className="h-8 sm:h-9 w-auto object-contain"
+            />
+            <span className="hidden sm:inline-block ml-1 text-[11px] font-bold bg-slate-100 text-slate-800 px-2.5 py-0.5 rounded-full border border-slate-200">
+              Pedidos & OCR
+            </span>
           </div>
 
           {/* Navigation Tabs */}

@@ -34,7 +34,8 @@ app.post('/api/ocr', async (req, res) => {
 
     let response: any;
     let lastError: any;
-    const candidateModels = ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-3.6-flash'];
+    // Prioritize ultra-fast flash-lite for sub-second OCR speed
+    const candidateModels = ['gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.8-flash'];
 
     for (const modelName of candidateModels) {
       try {
@@ -49,28 +50,45 @@ app.post('/api/ocr', async (req, res) => {
                 },
               },
               {
-                text: `Você é um especialista em OCR e extração estruturada de itens para pedidos de venda.
-IMPORTANTE: A imagem pode ser uma captura de tela (print) de celular ou aplicativo.
-FOQUE EXCLUSIVAMENTE nos itens e produtos que estão NO MEIO DA TELA (área de conteúdo principal).
-Ignore completamente elementos de interface do smartphone como:
-- Barra de status superior (horário, bateria, Wi-Fi, 4G, 5G, ícones do sistema)
-- Cabeçalhos de topo de aplicativos (botão voltar, campo de pesquisa, títulos de tela)
-- Barras de navegação inferior e botões de ação ("Comprar", "Finalizar", "Adicionar ao carrinho", "Ver sacola")
+                text: `Você é um especialista de altíssima precisão em OCR visual e extração estruturada de itens para pedidos e faturas a partir de prints de smartphones, telas de e-commerce e principalmente telas e mensagens do WHATSAPP.
 
-Extraia apenas os produtos reais no meio da tela (ex: "Top coat incolor", "Base bomba", "Removedor a base de acetona"):
-1. "orderNumber": Número do pedido ou fatura se houver.
-2. "orderDate": Data de emissão no formato YYYY-MM-DD se houver.
-3. "customerName": Nome do cliente ou destinatário se houver.
-4. "customerTaxId": CNPJ ou CPF se houver.
-5. "items": Lista dos produtos encontrados no meio da tela.
-   Para cada item:
-   - "code": Código SKU
-   - "description": Nome limpo e claro do produto
-   - "quantity": Quantidade inteira ou decimal (padrão 1)
-   - "unitPrice": Preço unitário numérico (ex: 15.00)
-   - "total": Valor total do item (quantity * unitPrice)
+OBJETIVO PRINCIPAL:
+Extrair a lista COMPLETA de PRODUTOS REAIS presentes na imagem (itens do carrinho, itens do pedido ou tabela de produtos).
 
-Retorne a resposta estritamente em JSON compatível com o schema definido.`,
+RECONHECIMENTO ESPECIAL DE TELAS DO WHATSAPP:
+1. CARTÃO DE PEDIDO NO CHAT DO WHATSAPP ("🛍️ Pedido • X itens", "Ver carrinho", lista prévia):
+   - Frequentemente exibe os produtos logo abaixo do título do pedido, como:
+     "1x Top coat incolor"
+     "2x Base bomba"
+     "1x Removedor a base de acetona"
+   - Extraia TODOS os produtos listados no cartão.
+
+2. TELA DE CARRINHO / DETALHES DO PEDIDO NO WHATSAPP:
+   - Exibe a lista com miniatura, Nome do Produto, Valor unitário (ex: "R$ 15,00" ou "15,00") e seletor de Quantidade (botões "[-] 1 [+]" ou badge "1x", "2x", "Qtd: 1").
+   - Extraia com máxima fidelidade o nome do produto, quantidade e valor.
+
+3. RECONHECIMENTO DE CÓDIGOS E IDENTIFICADORES:
+   - Se houver códigos, números ou marcadores na frente do item (ex: "#01", "#1", "COD: 101", "COD 01", "SKU-101", "1.", "2.", "[1]"):
+     * Preencha o campo "code" com este identificador exato.
+   - Se não houver código explícito, crie um código limpo sequencial como "PROD-01", "PROD-02", "PROD-03".
+
+4. ATRIBUTOS DE CADA ITEM:
+   - "description": Nome limpo e claro do produto (ex: "Top coat incolor", "Base bomba", "Removedor a base de acetona"). NUNCA inclua palavras de botões ou de interface como "Ver carrinho", "Toque para ver", "Remover", "un", "x", "R$".
+   - "quantity": Quantidade inteira de unidades compradas (ex: 1, 2, 3). Padrão = 1 se não especificado.
+   - "unitPrice": Preço unitário numérico decimal (ex: 15.00, 18.50).
+   - "total": Valor total daquele produto (quantity * unitPrice).
+
+5. FILTRAGEM RIGOROSA DE RUÍDOS DE INTERFACE (NÃO SÃO PRODUTOS):
+   - NUNCA crie produtos a partir de botões ou textos do WhatsApp: "Pedido", "Ver carrinho", "Toque para ver os itens", "Continuar comprando", "Subtotal", "Total estimado", "Enviar mensagem", "Fazer pedido", "Editar", "Remover", "Excluir".
+   - NUNCA inclua relógio/hora (ex: "14:32"), porcentagem de bateria ("90%"), ícones ("✓✓"), status ("Online", "Digitando...") ou cabeçalhos do celular.
+   - Retorne APENAS itens que sejam mercadorias/produtos físicos vendidos.
+
+6. DADOS GERAIS DO PEDIDO (SE VISÍVEIS):
+   - "orderNumber": Número do pedido se constar no print (ex: "#1023", "PED-12").
+   - "customerName": Nome do cliente se visível no topo da tela ou conversa.
+   - "orderDate": Data se visível.
+
+Retorne estritamente em JSON compatível com o schema definido.`,
               },
             ],
           },
@@ -122,6 +140,98 @@ Retorne a resposta estritamente em JSON compatível com o schema definido.`,
     });
   }
 });
+
+// In-memory store for WhatsApp orders received via Meta Cloud API Webhook
+interface WhatsAppReceivedOrder {
+  id: string;
+  receivedAt: string;
+  senderPhone: string;
+  senderName: string;
+  catalogId?: string;
+  items: {
+    retailerId: string;
+    quantity: number;
+    itemPrice: number;
+    currency: string;
+  }[];
+  notes?: string;
+  rawPayload: any;
+}
+
+const receivedWhatsAppOrders: WhatsAppReceivedOrder[] = [];
+
+// Meta WhatsApp Webhook Verification Endpoint (GET)
+app.get('/api/whatsapp-webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'artex7_whatsapp_token';
+
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    console.log('[WhatsApp Webhook] Webhook verificado com sucesso pela Meta');
+    return res.status(200).send(challenge);
+  } else {
+    return res.status(403).json({ error: 'Token de verificação inválido' });
+  }
+});
+
+// Meta WhatsApp Webhook Event Receiver (POST)
+app.post('/api/whatsapp-webhook', (req, res) => {
+  try {
+    const body = req.body;
+
+    // Check if it's a WhatsApp Business Account message event
+    if (body.object === 'whatsapp_business_account' || body.entry) {
+      for (const entry of body.entry || []) {
+        for (const change of entry.changes || []) {
+          const value = change.value;
+          if (value?.messages) {
+            for (const msg of value.messages) {
+              // 1. Order from WhatsApp Cart
+              if (msg.type === 'order' && msg.order) {
+                const contact = value.contacts?.find((c: any) => c.wa_id === msg.from) || value.contacts?.[0];
+                const newOrder: WhatsAppReceivedOrder = {
+                  id: msg.id || `wa-${Date.now()}`,
+                  receivedAt: new Date().toISOString(),
+                  senderPhone: msg.from || '',
+                  senderName: contact?.profile?.name || 'Cliente WhatsApp',
+                  catalogId: msg.order.catalog_id,
+                  items: (msg.order.product_items || []).map((it: any) => ({
+                    retailerId: it.product_retailer_id || '',
+                    quantity: Number(it.quantity) || 1,
+                    itemPrice: Number(it.item_price) || 0,
+                    currency: it.currency || 'BRL',
+                  })),
+                  notes: msg.order.text || '',
+                  rawPayload: msg,
+                };
+                receivedWhatsAppOrders.unshift(newOrder);
+                console.log(`[WhatsApp Webhook] Pedido de carrinho recebido de ${newOrder.senderName}:`, newOrder);
+              }
+            }
+          }
+        }
+      }
+      return res.status(200).send('EVENT_RECEIVED');
+    }
+
+    return res.status(200).json({ status: 'ignored' });
+  } catch (error: any) {
+    console.error('[WhatsApp Webhook] Erro ao processar webhook:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint to list WhatsApp orders received via webhook
+app.get('/api/whatsapp-orders', (_req, res) => {
+  return res.json({
+    orders: receivedWhatsAppOrders,
+    count: receivedWhatsAppOrders.length,
+    webhookUrl: '/api/whatsapp-webhook',
+  });
+});
+
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

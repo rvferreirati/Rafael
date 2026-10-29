@@ -35,14 +35,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ company, onSaveCompany
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-xs space-y-6">
-        <div className="flex items-center space-x-3 pb-4 border-b border-slate-100">
-          <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
-            <Building2 className="w-6 h-6" />
+        <div className="flex items-center space-x-4 pb-4 border-b border-slate-100">
+          <div className="p-2 bg-slate-50 border border-slate-200 rounded-xl">
+            <img src="/assets/aistudio/Logo_ARtex7_em_Preto_254e2cb7.png" alt="ARTEX7 Logo" className="h-7 sm:h-8 w-auto object-contain" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-slate-900">Configurações da Empresa Emissora</h2>
+            <h2 className="text-lg font-bold text-slate-900">Configurações da Empresa Emissora (ARTEX7)</h2>
             <p className="text-xs text-slate-500">
-              Essas informações aparecerão no cabeçalho e rodapé de todos os PDFs gerados.
+              Essas informações e o logotipo ARTEX7 aparecerão no cabeçalho de todos os PDFs gerados.
             </p>
           </div>
         </div>

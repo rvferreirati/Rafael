@@ -42,13 +42,14 @@ const DEFAULT_CUSTOMERS: Customer[] = [
 ];
 
 const DEFAULT_COMPANY: CompanyProfile = {
-  name: 'Apex Industrial Soluções Ltda',
+  name: 'ARTEX7',
   taxId: '34.981.240/0001-55',
-  email: 'pedidos@apexindustrial.com.br',
+  email: 'contato@artex7.com.br',
   phone: '(11) 4004-9800',
-  address: 'Av. Paulista, 1000, 12º andar - Bela Vista, São Paulo, SP - CEP 01310-100',
+  address: 'Av. Paulista, 1000, 12º andar - São Paulo, SP',
   currency: 'R$',
   defaultTaxRate: 8,
+  logoUrl: '/assets/aistudio/Logo_ARtex7_em_Preto_254e2cb7.png',
 };
 
 const INITIAL_ORDERS: SalesOrder[] = [
@@ -225,11 +226,11 @@ export default function App() {
       <footer className="bg-white border-t border-slate-200 py-4 text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center space-x-2">
-            <span className="font-semibold text-slate-700">SalesOrder Pro</span>
+            <img src="/assets/aistudio/Logo_ARtex7_em_Preto_254e2cb7.png" alt="ARTEX7" className="h-4 w-auto object-contain" />
             <span>•</span>
-            <span>OCR no Navegador (Client-side)</span>
+            <span>OCR de Carrinho com Recorte Inteligente</span>
             <span>•</span>
-            <span>Geração de PDF nativo</span>
+            <span>Geração de PDF nativo com Anexos</span>
           </div>
 
           <div className="flex items-center space-x-4">
