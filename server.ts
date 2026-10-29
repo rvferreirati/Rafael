@@ -93,18 +93,26 @@ REGRA CRÍTICA DE OURO - SÓ RETORNAR ITENS QUE ESTÃO NO BANCO DE DADOS:
 - NUNCA crie produtos a partir de botões ou links de categorias (como "Mostrar tudo", "Cílios Mostrar tudo", "Ver tudo", "Ver carrinho").
 - Se algo não for um produto do banco de dados, DESCARTE-O e NÃO o inclua na lista.
 
+ATENÇÃO MÁXIMA AO SUBTOTAL / TOTAL DO CARRINHO (Ex: "R$ 17,63"):
+- O valor no rodapé da tela ou resumo (ex: "Total: R$ 17,63", "Subtotal: R$ 17,63") é a SOMA dos produtos, NUNCA o preço de um item individual!
+- NUNCA atribua o valor do Subtotal (17,63) a nenhum produto como o Bloco Polidor.
+- O preço de tabela do Bloco Polidor no Banco de Dados é SEMPRE R$ 3,00.
+- O preço da Lixa mini canário é SEMPRE R$ 7,70.
+- O preço da Lixa moeda preta é SEMPRE R$ 6,93.
+- Use SEMPRE o preço unitário oficial de cada produto indicado no Banco de Dados acima.
+
 REGRA PARA NOMES TRUNCADOS / RETICÊNCIAS ("..."):
 - Os prints de celulares e WhatsApp frequentemente CORTAM os nomes dos produtos com "..." (exemplo: "Lixa mini canário pur..." ou "Lixa moeda preta po...").
 - Sempre que a imagem contiver um item cujo texto bate com o início ou palavras de um produto do BANCO DE DADOS acima, use:
   1. "code": O código oficial do produto (ex: "#47", "#46", "#10", "#22", "#56").
   2. "description": O nome COMPLETO oficial do banco de dados (ex: "Bloco Polidor", "Lixa mini canário pura arte com...", "Lixa moeda preta podóloga grão...", "Protetor de bacia pedicure com...").
-  3. "unitPrice": O valor unitário do item (ex: 3.00, 7.70, 6.93, 11.50).
+  3. "unitPrice": O valor unitário oficial daquele produto no banco de dados (ex: 3.00, 7.70, 6.93, 11.50).
   4. "quantity": A quantidade informada no print (ex: 1, 2, etc.). Padrão 1.
   5. "total": quantity * unitPrice.
 
 FILTROS DE RUÍDO:
 - NUNCA inclua cabeçalhos, botões ("Continuar comprando", "Subtotal", "Ver carrinho"), relógio ou status do celular.
-- Extraia TODOS os produtos visíveis no carrinho que estejam no banco.
+- Extraia cada produto único presente no carrinho.
 
 Retorne estritamente em JSON compatível com o schema definido.`;
 
@@ -184,21 +192,38 @@ Retorne estritamente em JSON compatível com o schema definido.`;
 
     // Post-reconciliation against catalog - STRICT: SÓ INSERIR SE ESTIVER NO BANCO DE DADOS
     const reconciledItems: any[] = [];
+    const seenCodes = new Set<string>();
+
     for (const it of (parsed.items || [])) {
       const desc = String(it.description || '').trim();
       const rawPrice = Number(it.unitPrice) || 0;
       const match = matchItemWithCatalog(desc, rawPrice, activeCatalog);
       
       if (match) {
+        const codeKey = `#${match.product.code}`;
+        
+        // Deduplicate rows if same product is extracted multiple times from same print
+        if (seenCodes.has(codeKey)) {
+          const existing = reconciledItems.find((r) => r.code === codeKey);
+          if (existing && it.quantity && Number(it.quantity) > existing.quantity) {
+            existing.quantity = Number(it.quantity);
+            existing.total = existing.quantity * existing.unitPrice;
+          }
+          continue;
+        }
+
         const q = Number(it.quantity) && Number(it.quantity) > 0 ? Number(it.quantity) : 1;
-        const p = rawPrice > 0 ? rawPrice : Number(match.product.price);
+        // ALWAYS USE OFFICIAL CATALOG PRICE as truth (prevents cart total 17.63 from overwriting unit price 3.00)
+        const p = Number(match.product.price) > 0 ? Number(match.product.price) : rawPrice;
+
         reconciledItems.push({
-          code: `#${match.product.code}`,
+          code: codeKey,
           description: match.product.name,
           quantity: q,
           unitPrice: p,
           total: q * p,
         });
+        seenCodes.add(codeKey);
       }
       // If it did NOT match the catalog (e.g. "R$ 520", "Cilios Mostrar tudo", etc.):
       // DO NOT INSERT! Strictly filter out non-database items as requested by user.

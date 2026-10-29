@@ -283,7 +283,9 @@ export function matchItemWithCatalog(
 /**
  * Reconciles an array of LineItems with the catalog.
  * By default, strictCatalogOnly = true: ONLY ITEMS IN THE DATABASE WILL BE INSERTED!
- * Discards noises like "R$ 520", "Mostrar tudo", or any unregistered item.
+ * - ALWAYS uses official catalog price (prevents cart subtotals like 17.63 from overwriting unit price 3.00).
+ * - Deduplicates items so the same product is not inserted twice from a single print.
+ * - Discards noises like "R$ 520", "Mostrar tudo", or any unregistered item.
  */
 export function reconcileItemsWithCatalog<
   T extends { code?: string; description: string; unitPrice: number; quantity: number; total?: number }
@@ -293,6 +295,7 @@ export function reconcileItemsWithCatalog<
   strictCatalogOnly: boolean = true
 ): T[] {
   const result: T[] = [];
+  const seenCodes = new Set<string>();
 
   for (const item of items) {
     // If description is invalid noise, skip immediately
@@ -302,15 +305,31 @@ export function reconcileItemsWithCatalog<
 
     const match = matchItemWithCatalog(item.description, item.unitPrice, catalog);
     if (match) {
-      const unitPrice = item.unitPrice > 0 ? item.unitPrice : match.product.price;
+      const codeKey = `#${match.product.code}`;
+
+      // Deduplicate: if this product was already added from this print, do not duplicate row
+      const existing = result.find((r) => r.code === codeKey);
+      if (existing) {
+        if (item.quantity && item.quantity > existing.quantity) {
+          existing.quantity = item.quantity;
+          existing.total = existing.quantity * existing.unitPrice;
+        }
+        continue;
+      }
+
+      // ALWAYS USE OFFICIAL CATALOG PRICE as primary truth
+      // (This guarantees Bloco Polidor is R$ 3,00 and never 17.63 which is the subtotal)
+      const officialPrice = match.product.price > 0 ? match.product.price : item.unitPrice;
       const qty = item.quantity && item.quantity > 0 ? item.quantity : 1;
+
       result.push({
         ...item,
-        code: `#${match.product.code}`,
+        code: codeKey,
         description: match.product.name,
-        unitPrice,
-        total: qty * unitPrice,
+        unitPrice: officialPrice,
+        total: qty * officialPrice,
       });
+      seenCodes.add(codeKey);
     } else if (!strictCatalogOnly) {
       result.push(item);
     }

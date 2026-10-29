@@ -80,13 +80,13 @@ export function parseOCRText(rawText: string): ParsedOCRResult {
     lines = lines.slice(startIndex + 1);
   }
 
-  // B. Find "Subtotal" end marker (only if it appears after some potential items, not at the very top)
+  // B. Find "Subtotal" or "Total" end marker (only keep lines strictly before cart total)
   const endIndex = lines.findIndex((l, idx) =>
-    idx > 0 && /(?:^|\b)(?:sub[\s-]?total|total\s+dos\s+produtos|calcular\s+frete|entrega\s+e\s+frete|forma\s+de\s+pagamento|ir\s+para\s+o\s+pagamento|finalizar\s+compra|cupom\s+de\s+desconto)(?:\b|$)/i.test(l)
+    idx > 0 && /(?:^|\b)(?:sub[\s-]?total|total\s+estimado|total\s+dos\s+produtos|total\s+a\s+pagar|total[\s:]+r\$|calcular\s+frete|entrega\s+e\s+frete|forma\s+de\s+pagamento|ir\s+para\s+o\s+pagamento|finalizar\s+compra|cupom\s+de\s+desconto)(?:\b|$)/i.test(l)
   );
 
   if (endIndex !== -1 && endIndex > 0) {
-    // Only keep lines strictly BEFORE "subtotal"
+    // Only keep lines strictly BEFORE "subtotal / total"
     lines = lines.slice(0, endIndex);
   }
 
