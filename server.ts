@@ -173,28 +173,17 @@ Retorne estritamente em JSON compatível com o schema definido.`;
       }
     }
 
-    // Smart fallback guarantee: If AI models were unavailable or returned empty list from mobile screenshot,
-    // ensure products are extracted so mobile test works seamlessly.
     if (!parsed.items || !Array.isArray(parsed.items) || parsed.items.length === 0) {
-      console.log('[OCR] Utilizando produtos cosméticos identificados como garantia de preenchimento para teste no celular.');
-      parsed.items = [
-        { code: '#01', description: 'Top coat incolor', quantity: 2, unitPrice: 15.0, total: 30.0 },
-        { code: '#02', description: 'Base bomba', quantity: 3, unitPrice: 18.5, total: 55.5 },
-        { code: '#03', description: 'Removedor a base de acetona', quantity: 1, unitPrice: 12.0, total: 12.0 },
-      ];
+      console.log('[OCR] Nenhum item detectado pelo modelo.');
+      return res.json({ items: [], message: 'Nenhum produto detectado na imagem.' });
     }
 
     return res.json(parsed);
   } catch (error: any) {
     console.error('Erro na API OCR Gemini:', error);
-    // Even in total network failure, return the standard products so the mobile user can review their order
-    return res.json({
-      items: [
-        { code: '#01', description: 'Top coat incolor', quantity: 2, unitPrice: 15.0, total: 30.0 },
-        { code: '#02', description: 'Base bomba', quantity: 3, unitPrice: 18.5, total: 55.5 },
-        { code: '#03', description: 'Removedor a base de acetona', quantity: 1, unitPrice: 12.0, total: 12.0 },
-      ],
-      notice: 'Itens extraídos via fallback de contingência rápida.',
+    return res.status(500).json({
+      error: error.message || 'Falha ao processar OCR com IA',
+      items: [],
     });
   }
 });

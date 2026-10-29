@@ -534,14 +534,15 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
         console.warn('Falha na chamada /api/ocr:', e);
       }
 
-      // Mobile resilience fallback: return standard recognized items
-      return {
-        items: [
-          { id: `item-cosm-1-${Date.now()}`, code: '#01', description: 'Top coat incolor', quantity: 2, unitPrice: 15.0, total: 30.0 },
-          { id: `item-cosm-2-${Date.now()}`, code: '#02', description: 'Base bomba', quantity: 3, unitPrice: 18.5, total: 55.5 },
-          { id: `item-cosm-3-${Date.now()}`, code: '#03', description: 'Removedor a base de acetona', quantity: 1, unitPrice: 12.0, total: 12.0 },
-        ],
-      };
+      // If AI fails or returns empty, try local Tesseract as fallback
+      try {
+        const localItems = await runClientSideTesseract(imageToSend);
+        if (localItems.length > 0) return { items: localItems };
+      } catch (err) {
+        console.warn('Tesseract fallback falhou:', err);
+      }
+
+      return { items: [] };
     }
 
     // Only run local Tesseract if user explicitly selected Tesseract engine
@@ -640,13 +641,9 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       // Automatically advance to items tab for review & value adjustment!
       setActiveStep('items');
     } else {
-      const fallbackItems: LineItem[] = [
-        { id: `item-cosm-1-${Date.now()}`, code: '#01', description: 'Top coat incolor', quantity: 2, unitPrice: 15.0, total: 30.0 },
-        { id: `item-cosm-2-${Date.now()}`, code: '#02', description: 'Base bomba', quantity: 3, unitPrice: 18.5, total: 55.5 },
-        { id: `item-cosm-3-${Date.now()}`, code: '#03', description: 'Removedor a base de acetona', quantity: 1, unitPrice: 12.0, total: 12.0 },
-      ];
-      setItems(fallbackItems);
-      setFeedbackSuccess(`⚡ ${fallbackItems.length} produtos carregados do print! Revise os itens e valores.`);
+      setFeedbackSuccess(
+        `Print processado em ${elapsedSeconds}s. Nenhum produto detectado automaticamente — você pode adicionar produtos diretamente pelo Catálogo Rápido ou clicar em "Adicionar Item".`
+      );
       setActiveStep('items');
     }
   };
