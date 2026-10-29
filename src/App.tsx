@@ -5,7 +5,9 @@ import { CustomersTab } from './components/CustomersTab';
 import { HistoryTab } from './components/HistoryTab';
 import { SettingsTab } from './components/SettingsTab';
 import { QuickStartModal } from './components/QuickStartModal';
+import { CatalogModal } from './components/CatalogModal';
 import { Customer, SalesOrder, CompanyProfile } from './types';
+import { CatalogProduct, loadStoredCatalog } from './utils/productCatalog';
 import { HelpCircle, Sparkles } from 'lucide-react';
 
 const STORAGE_KEYS = {
@@ -99,6 +101,8 @@ const INITIAL_ORDERS: SalesOrder[] = [
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('create-order');
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [catalog, setCatalog] = useState<CatalogProduct[]>(loadStoredCatalog);
+  const [isCatalogOpen, setIsCatalogOpen] = useState(false);
 
   // Persistence
   const [customers, setCustomers] = useState<Customer[]>(() => {
@@ -182,6 +186,8 @@ export default function App() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onOpenHelp={() => setIsHelpOpen(true)}
+        onOpenCatalog={() => setIsCatalogOpen(true)}
+        catalogCount={catalog.length}
         ordersCount={orders.length}
         customersCount={customers.length}
       />
@@ -255,6 +261,14 @@ export default function App() {
           const event = new CustomEvent('load_sample_preset', { detail: presetId });
           window.dispatchEvent(event);
         }}
+      />
+
+      {/* Global Product Catalog Modal */}
+      <CatalogModal
+        isOpen={isCatalogOpen}
+        onClose={() => setIsCatalogOpen(false)}
+        catalog={catalog}
+        onUpdateCatalog={setCatalog}
       />
     </div>
   );

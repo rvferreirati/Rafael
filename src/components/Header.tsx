@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileSpreadsheet, Users, History, Building2, HelpCircle, FileCheck2 } from 'lucide-react';
+import { FileSpreadsheet, Users, History, Building2, HelpCircle, FileCheck2, Database } from 'lucide-react';
 
 export type TabType = 'create-order' | 'customers' | 'history' | 'settings';
 
@@ -7,16 +7,20 @@ interface HeaderProps {
   activeTab: TabType;
   onTabChange: (tab: TabType) => void;
   onOpenHelp: () => void;
+  onOpenCatalog?: () => void;
   ordersCount: number;
   customersCount: number;
+  catalogCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
   onTabChange,
   onOpenHelp,
+  onOpenCatalog,
   ordersCount,
   customersCount,
+  catalogCount,
 }) => {
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
@@ -92,11 +96,24 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </nav>
 
-          {/* Quick Help Guide Button */}
+          {/* Quick Actions (Database & Help Guide) */}
           <div className="flex items-center space-x-2">
+            {onOpenCatalog && (
+              <button
+                onClick={onOpenCatalog}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg transition-all shadow-xs cursor-pointer"
+                title="Visualizar e gerenciar Banco de Dados de Produtos"
+              >
+                <Database className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="hidden sm:inline">Banco de Dados</span>
+                <span className="text-[10px] bg-emerald-200 text-emerald-900 font-bold px-1.5 py-0.5 rounded-full">
+                  {catalogCount ?? 12}
+                </span>
+              </button>
+            )}
             <button
               onClick={onOpenHelp}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-all shadow-xs"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-all shadow-xs cursor-pointer"
               title="Ver instruções de teste"
             >
               <HelpCircle className="w-4 h-4" />

@@ -1,0 +1,13 @@
+Código	Descrição do item	Preço
+47	Bloco Polidor	R$ 3,00
+46	Lixa mini canário pura arte com...	R$ 7,70
+10	Lixa moeda preta podóloga grão...	R$ 6,93
+12	Algodão prensado com 1000 unidades	R$ 13,00
+14	Algodão bola 95 g	R$ 5,00
+23	Rolo de Algodão 500 g	R$ 20,00
+22	Protetor de bacia plástica Manic...	R$ 5,20
+56	Protetor de bacia pedicure com...	R$ 11,50
+66	Touca plástica descartável com...	R$ 8,51
+17	Cílios Mix 8 a 14	R$ 30,00
+90	Cílios Magna D-lash Naturals Kn...	R$ 12,00
+34	Cílios Postiços 7P-C 14mm	R$ 11,00

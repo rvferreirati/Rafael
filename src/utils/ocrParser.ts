@@ -1,4 +1,5 @@
 import { LineItem } from '../types';
+import { reconcileItemsWithCatalog } from './productCatalog';
 
 export interface ParsedOCRResult {
   orderNumber?: string;
@@ -155,18 +156,27 @@ export function parseOCRText(rawText: string): ParsedOCRResult {
   // 7. Extraction & Association of Products with Quantities and Prices
   // =========================================================================
   const priceRegex = /(?:R\$|\$|€|£)?\s*([0-9]{1,5}[.,][0-9]{2})/i;
-  const qtyRegex = /(?:qtd|quant|quantidade)?[\s:]*([0-9]{1,3})\s*(?:x|un|und|cx|pc|pçs)?\b/i;
+  // Strict quantity regex that NEVER matches decimals inside prices (e.g. 6 in 6,93)
+  const qtyRegex = /(?:(?:qtd|quant|quantidade)[\s.:]*([0-9]{1,3})\b)|(?:([0-9]{1,3})\s*(?:x|un|und|cx|pc|pçs)\b)/i;
+
+  const cleanDesc = (text: string): string => {
+    let s = text.replace(/^[\s.·=~–—\-:;,•\*]+/, '');
+    s = s.replace(/^(?:X|BI|Bl)\s+(?!oco)/i, '');
+    s = s.replace(/[\s.·=~–—\-:;,•\*]+$/, '');
+    s = s.replace(/\b(?:TE|ESTO|pur|po)\b/gi, '');
+    s = s.replace(/\bquantidade[\s.:]*\d+/gi, '');
+    return s.replace(/\s+/g, ' ').trim();
+  };
 
   const items: LineItem[] = [];
-  let pendingProductCode: string | null = null;
-  let pendingProductDesc: string | null = null;
-  let pendingProductQty = 1;
+  let pendingPrice: number | null = null;
+  let pendingProduct: LineItem | null = null;
 
   for (let i = 0; i < validLines.length; i++) {
     const rawLine = validLines[i].trim();
     if (isNonsenseOrNoise(rawLine)) continue;
 
-    // Check for explicit code prefix
+    // Check for explicit code prefix (#01, COD, 1.)
     const { code: detectedCode, cleaned } = extractCodePrefix(rawLine);
     let line = cleaned.trim();
     if (isNonsenseOrNoise(line)) continue;
@@ -176,83 +186,80 @@ export function parseOCRText(rawText: string): ParsedOCRResult {
 
     if (priceMatch) {
       const priceVal = parseFloat(priceMatch[1].replace(',', '.'));
-      let desc = line.replace(priceMatch[0], '').trim();
+      const textWithoutPrice = line.replace(priceMatch[0], '').trim();
+      const desc = cleanDesc(textWithoutPrice);
+      const isPurePrice = desc.replace(/[^a-zA-ZÀ-ÿ0-9]/g, '').length < 3;
+
+      if (isPurePrice) {
+        if (pendingProduct) {
+          pendingProduct.unitPrice = priceVal;
+          pendingProduct.total = pendingProduct.quantity * priceVal;
+          items.push(pendingProduct);
+          pendingProduct = null;
+        } else if (items.length > 0 && items[items.length - 1].unitPrice === 0) {
+          items[items.length - 1].unitPrice = priceVal;
+          items[items.length - 1].total = items[items.length - 1].quantity * priceVal;
+        } else {
+          pendingPrice = priceVal;
+        }
+        continue;
+      }
 
       let quantity = 1;
-      if (qtyMatch && qtyMatch[1]) {
-        const parsedQty = parseInt(qtyMatch[1], 10);
-        if (parsedQty > 0 && parsedQty < 500) {
-          quantity = parsedQty;
-          desc = desc.replace(qtyMatch[0], '').trim();
+      if (qtyMatch) {
+        const q = parseInt(qtyMatch[1] || qtyMatch[2], 10);
+        if (q > 0 && q < 500) quantity = q;
+      }
+
+      const item: LineItem = {
+        id: `item-${Date.now()}-${items.length}`,
+        code: detectedCode || `SKU-${101 + items.length}`,
+        description: desc,
+        quantity,
+        unitPrice: priceVal,
+        total: quantity * priceVal,
+      };
+      items.push(item);
+      pendingPrice = null;
+      continue;
+    }
+
+    // Line without price:
+    // Check if it's a continuation of the previous item (e.g. "ão preta po quantidade: 1")
+    if (line.match(/^(?:ão|da|de|do|pur|po|para|com|em|preta)\b/i) || line.match(/quantidade[\s.:]*\d+/i)) {
+      if (qtyMatch && items.length > 0) {
+        const q = parseInt(qtyMatch[1] || qtyMatch[2], 10);
+        if (q > 0) {
+          items[items.length - 1].quantity = q;
+          items[items.length - 1].total = q * items[items.length - 1].unitPrice;
         }
       }
-
-      // If this line only had a price, associate it with the pending product description
-      if (desc.length < 3 && pendingProductDesc) {
-        items.push({
-          id: `item-${Date.now()}-${items.length}`,
-          code: pendingProductCode || detectedCode || `SKU-${101 + items.length}`,
-          description: pendingProductDesc,
-          quantity: pendingProductQty || quantity,
-          unitPrice: priceVal,
-          total: (pendingProductQty || quantity) * priceVal,
-        });
-        pendingProductCode = null;
-        pendingProductDesc = null;
-        pendingProductQty = 1;
-        continue;
-      }
-
-      // Clean up description
-      desc = desc.replace(/[–—\-:;,]+$/, '').replace(/^[–—\-:;,]+/, '').trim();
-
-      if (desc.length >= 2 && !isNonsenseOrNoise(desc)) {
-        items.push({
-          id: `item-${Date.now()}-${items.length}`,
-          code: detectedCode || pendingProductCode || `SKU-${101 + items.length}`,
-          description: desc,
-          quantity,
-          unitPrice: priceVal,
-          total: quantity * priceVal,
-        });
-        pendingProductCode = null;
-        pendingProductDesc = null;
-        continue;
-      }
+      continue;
     }
 
-    // Line does not have a price: check if it's a valid product description
-    // (e.g. "Top coat incolor", "Base bomba", "Removedor a base de acetona")
-    if (line.length >= 2 && line.length <= 100 && !isNonsenseOrNoise(line)) {
-      // If we already had a pending product, save it with price 0 so user can enter price
-      if (pendingProductDesc) {
-        items.push({
-          id: `item-${Date.now()}-${items.length}`,
-          code: pendingProductCode || `SKU-${101 + items.length}`,
-          description: pendingProductDesc,
-          quantity: pendingProductQty,
-          unitPrice: 0.0,
-          total: 0.0,
-        });
+    const desc = cleanDesc(line);
+    if (desc.length >= 2 && !isNonsenseOrNoise(desc)) {
+      const item: LineItem = {
+        id: `item-${Date.now()}-${items.length}`,
+        code: detectedCode || `SKU-${101 + items.length}`,
+        description: desc,
+        quantity: 1,
+        unitPrice: pendingPrice || 0,
+        total: (pendingPrice || 0) * 1,
+      };
+      pendingPrice = null;
+
+      if (item.unitPrice > 0) {
+        items.push(item);
+      } else {
+        if (pendingProduct) items.push(pendingProduct);
+        pendingProduct = item;
       }
-      pendingProductCode = detectedCode || null;
-      pendingProductDesc = line;
-      pendingProductQty = 1;
     }
   }
 
-  // If there's a trailing product
-  if (pendingProductDesc) {
-    items.push({
-      id: `item-${Date.now()}-${items.length}`,
-      code: pendingProductCode || `SKU-${101 + items.length}`,
-      description: pendingProductDesc,
-      quantity: pendingProductQty,
-      unitPrice: 0.0,
-      total: 0.0,
-    });
-  }
+  if (pendingProduct) items.push(pendingProduct);
 
-  result.items = items;
+  result.items = reconcileItemsWithCatalog(items);
   return result;
 }
