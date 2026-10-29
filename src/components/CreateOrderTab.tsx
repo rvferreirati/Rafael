@@ -643,7 +643,13 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
         if (result.date) setOrderDate(result.date);
         if (result.custName && !custName) setCustName(result.custName);
 
-        allExtractedItems.push(...result.items);
+        // Map items from this print with fresh unique IDs so they won't have React key collisions
+        const printItems = result.items.map((it, idx) => ({
+          ...it,
+          id: `item-${Date.now()}-${i}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+        }));
+
+        allExtractedItems.push(...printItems);
       } catch (err: any) {
         print.status = 'error';
         print.errorMessage = err?.message || 'Erro ao ler imagem';
@@ -654,18 +660,18 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     setIsProcessingOCR(false);
     setOcrProgress(100);
 
-    // 3. Update items in table (strictly catalog items only)
-    const filteredValidItems = reconcileItemsWithCatalog(allExtractedItems, catalog, true);
-
-    if (filteredValidItems.length > 0) {
+    // 3. Update items in table
+    // Each print has already had its items reconciled against the database individually.
+    // We preserve all items across multiple prints, allowing the same item to appear from different prints!
+    if (allExtractedItems.length > 0) {
       if (accumulatePrints && uploadedPrints.length > 0) {
-        setItems((prev) => [...prev, ...filteredValidItems]);
+        setItems((prev) => [...prev, ...allExtractedItems]);
       } else {
-        setItems(filteredValidItems);
+        setItems(allExtractedItems);
       }
 
       setFeedbackSuccess(
-        `⚡ Concluído em ${elapsedSeconds}s! ${filteredValidItems.length} produtos do Banco de Dados identificados com 100% de precisão.`
+        `⚡ Concluído em ${elapsedSeconds}s! ${allExtractedItems.length} produtos do Banco de Dados identificados com 100% de precisão.`
       );
 
       // Automatically advance to items tab for review & value adjustment!

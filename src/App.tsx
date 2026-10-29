@@ -6,6 +6,7 @@ import { HistoryTab } from './components/HistoryTab';
 import { SettingsTab } from './components/SettingsTab';
 import { QuickStartModal } from './components/QuickStartModal';
 import { CatalogModal } from './components/CatalogModal';
+import { LoginScreen } from './components/LoginScreen';
 import { Customer, SalesOrder, CompanyProfile } from './types';
 import { CatalogProduct, loadStoredCatalog } from './utils/productCatalog';
 import { HelpCircle, Sparkles } from 'lucide-react';
@@ -14,6 +15,7 @@ const STORAGE_KEYS = {
   CUSTOMERS: 'so_pro_customers_v1',
   ORDERS: 'so_pro_orders_v1',
   COMPANY: 'so_pro_company_v1',
+  AUTH: 'artex7_auth_user_v1',
 };
 
 const DEFAULT_CUSTOMERS: Customer[] = [
@@ -183,6 +185,39 @@ export default function App() {
     setCustomers((prev) => prev.filter((c) => c.id !== id));
   };
 
+  // User Authentication State (Arnaldo / Rafael - Senha: 7284)
+  const [currentUser, setCurrentUser] = useState<{ username: string; name: string } | null>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.AUTH);
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const handleLogin = (user: { username: string; name: string }) => {
+    setCurrentUser(user);
+    try {
+      localStorage.setItem(STORAGE_KEYS.AUTH, JSON.stringify(user));
+    } catch (e) {
+      console.warn('Erro ao salvar sessão de usuário:', e);
+    }
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    try {
+      localStorage.removeItem(STORAGE_KEYS.AUTH);
+    } catch (e) {
+      console.warn('Erro ao encerrar sessão:', e);
+    }
+  };
+
+  // If user is not authenticated, show the Login Screen
+  if (!currentUser) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
       {/* Top Navigation */}
@@ -194,6 +229,8 @@ export default function App() {
         catalogCount={catalog.length}
         ordersCount={orders.length}
         customersCount={customers.length}
+        currentUser={currentUser}
+        onLogout={handleLogout}
       />
 
       {/* Main Content Viewport */}
