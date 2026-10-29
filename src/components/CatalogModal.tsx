@@ -69,9 +69,10 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
   );
 
   // Check if newCode already exists in catalog
-  const existingProductWithCode = newCode.trim()
+  const isNoCode = !newCode.trim() || newCode.trim() === '-';
+  const existingProductWithCode = (!isNoCode && newCode.trim())
     ? catalog.find(
-        (p) => p.code.toLowerCase() === newCode.trim().replace(/^#/, '').toLowerCase()
+        (p) => p.code.toLowerCase() !== '-' && p.code.toLowerCase() === newCode.trim().replace(/^#/, '').toLowerCase()
       )
     : null;
 
@@ -81,7 +82,8 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
     if (!newName.trim()) return;
 
     const priceNum = parseFloat(newPrice.replace(',', '.')) || 0;
-    const codeVal = newCode.trim().replace(/^#/, '') || `${catalog.length + 1}`;
+    const rawCode = newCode.trim().replace(/^#/, '');
+    const codeVal = rawCode === '' || rawCode === '-' ? '-' : rawCode;
 
     const updated = upsertCatalogProduct(catalog, {
       code: codeVal,
@@ -99,6 +101,8 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
     setFeedback(
       wasUpdate
         ? `Produto #${codeVal} atualizado com novo valor (R$ ${priceNum.toFixed(2).replace('.', ',')})!`
+        : codeVal === '-'
+        ? `Produto "${newName.trim()}" adicionado sem código (-) com sucesso!`
         : `Produto #${codeVal} adicionado com sucesso!`
     );
     setTimeout(() => setFeedback(null), 3500);
@@ -114,7 +118,8 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
 
   const handleSaveEdit = (originalCode: string) => {
     const priceNum = parseFloat(editItemPrice.replace(',', '.')) || 0;
-    const cleanCode = editItemCode.trim().replace(/^#/, '') || originalCode;
+    const rawCode = editItemCode.trim().replace(/^#/, '');
+    const cleanCode = rawCode === '' || rawCode === '-' ? '-' : rawCode;
 
     // Filter out original code, then upsert
     const withoutOriginal = catalog.filter((p) => p.code !== originalCode);
@@ -127,7 +132,11 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
     onUpdateCatalog(updated);
     saveStoredCatalog(updated);
     setEditingCode(null);
-    setFeedback(`Produto #${cleanCode} atualizado com sucesso!`);
+    setFeedback(
+      cleanCode === '-'
+        ? `Produto atualizado sem código (-) com sucesso!`
+        : `Produto #${cleanCode} atualizado com sucesso!`
+    );
     setTimeout(() => setFeedback(null), 3000);
   };
 
@@ -428,9 +437,15 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {previewItems.map((item, index) => {
-                          const existing = catalog.find(
-                            (c) => c.code.toLowerCase() === item.code.toLowerCase()
-                          );
+                          const itemCode = item.code.trim();
+                          const isItemNoCode = !itemCode || itemCode === '-';
+                          const existing = !isItemNoCode
+                            ? catalog.find(
+                                (c) => c.code.toLowerCase() !== '-' && c.code.toLowerCase() === itemCode.toLowerCase()
+                              )
+                            : catalog.find(
+                                (c) => c.name.toLowerCase().trim() === item.name.toLowerCase().trim()
+                              );
                           return (
                             <tr key={index} className="hover:bg-indigo-50/30 transition-colors">
                               {/* Code input */}
@@ -438,6 +453,7 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
                                 <input
                                   type="text"
                                   value={item.code}
+                                  placeholder="-"
                                   onChange={(e) =>
                                     handlePreviewItemChange(index, 'code', e.target.value)
                                   }
@@ -482,7 +498,11 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
                                     title={`Preço atual no banco: R$ ${existing.price.toFixed(2)}`}
                                   >
                                     <AlertTriangle className="w-3 h-3 text-amber-600" />
-                                    Atualizará (#R$ {existing.price.toFixed(2)})
+                                    Atualizará (R$ {existing.price.toFixed(2).replace('.', ',')})
+                                  </span>
+                                ) : isItemNoCode ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                    Sem código (-)
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -602,9 +622,14 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
                               <input
                                 type="text"
                                 value={editItemCode}
+                                placeholder="-"
                                 onChange={(e) => setEditItemCode(e.target.value)}
                                 className="w-16 font-mono font-bold text-xs px-2 py-1 bg-white border border-amber-300 rounded-md outline-none"
                               />
+                            ) : item.code === '-' ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 font-mono text-xs font-bold" title="Item sem código">
+                                -
+                              </span>
                             ) : (
                               <span>#{item.code}</span>
                             )}
@@ -708,10 +733,10 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
               </div>
               <input
                 type="text"
-                placeholder="Cód (ex: 47)"
+                placeholder="Cód (ex: 47 ou -)"
                 value={newCode}
                 onChange={(e) => setNewCode(e.target.value)}
-                className="w-full sm:w-24 px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-mono font-bold"
+                className="w-full sm:w-28 px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-mono font-bold"
               />
               <input
                 type="text"

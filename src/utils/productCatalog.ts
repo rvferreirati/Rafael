@@ -96,7 +96,7 @@ export function parseCatalogText(text: string): CatalogProduct[] {
     // 3. Try hyphen-separated: "47 - Bloco Polidor - R$ 3,00" or "Bloco Polidor - R$ 3,00"
     const hyphenParts = line.split(/\s*-\s*/);
     if (hyphenParts.length >= 3) {
-      const code = hyphenParts[0].replace(/^#/, '');
+      const code = hyphenParts[0].replace(/^#/, '').trim() || '-';
       const name = hyphenParts[1];
       const rawPrice = hyphenParts[2];
       const price = parseFloat(rawPrice.replace(/[^0-9.,]/g, '').replace(',', '.')) || 0;
@@ -105,14 +105,15 @@ export function parseCatalogText(text: string): CatalogProduct[] {
     } else if (hyphenParts.length === 2) {
       const rawPrice = hyphenParts[1];
       const price = parseFloat(rawPrice.replace(/[^0-9.,]/g, '').replace(',', '.')) || 0;
-      results.push({ code: `SKU-${100 + results.length}`, name: hyphenParts[0], price });
+      // Item without code: use '-' as code
+      results.push({ code: '-', name: hyphenParts[0].trim(), price });
       continue;
     }
 
-    // 4. Try Space-separated: "47 Bloco Polidor R$ 3,00" or "47 Bloco Polidor 3.00"
+    // 4. Try Space-separated: "47 Bloco Polidor R$ 3,00" or "- Bloco Polidor 3.00"
     const spaceMatch = line.match(/^#?([0-9A-Za-z_-]+)\s+(.+?)\s+(?:r\$\s*)?([0-9]+(?:[.,][0-9]{1,2})?)$/i);
     if (spaceMatch) {
-      const code = spaceMatch[1];
+      const code = spaceMatch[1].trim() || '-';
       const name = spaceMatch[2].trim();
       const rawPrice = spaceMatch[3];
       const price = parseFloat(rawPrice.replace(',', '.')) || 0;
@@ -121,32 +122,58 @@ export function parseCatalogText(text: string): CatalogProduct[] {
         continue;
       }
     }
+
+    // 5. Try Item without code, space separated: "Bloco Polidor 3,00"
+    const noCodeMatch = line.match(/^(.+?)\s+(?:r\$\s*)?([0-9]+(?:[.,][0-9]{1,2}))$/i);
+    if (noCodeMatch) {
+      const name = noCodeMatch[1].trim().replace(/^-\s*/, '');
+      const price = parseFloat(noCodeMatch[2].replace(',', '.')) || 0;
+      if (name && !isNaN(price)) {
+        results.push({ code: '-', name, price });
+        continue;
+      }
+    }
   }
 
-  // Deduplicate within the parsed text itself (keeping last occurrence)
+  // Deduplicate within the parsed text itself (keeping last occurrence for keyed items, but preserving separate items with code '-')
   const uniqueMap = new Map<string, CatalogProduct>();
-  for (const item of results) {
-    const key = item.code.trim().toLowerCase();
-    uniqueMap.set(key, item);
-  }
+  results.forEach((item, index) => {
+    const isNoCode = !item.code || item.code.trim() === '-';
+    const key = isNoCode
+      ? `nocode_${index}_${normalizeForComparison(item.name)}`
+      : item.code.trim().toLowerCase();
+    uniqueMap.set(key, { ...item, code: isNoCode ? '-' : item.code.trim() });
+  });
 
   return Array.from(uniqueMap.values());
 }
 
 /**
- * Inserts or updates an existing catalog product by code.
- * If the product code already exists, updates name and price.
+ * Inserts or updates an existing catalog product by code or by name if code is '-'.
+ * If the product code already exists (and is not '-'), updates name and price.
+ * If code is '-', matches only by product name, allowing multiple distinct items with code '-'.
  */
 export function upsertCatalogProduct(catalog: CatalogProduct[], product: CatalogProduct): CatalogProduct[] {
-  const normCode = product.code.replace(/^#/, '').trim();
-  const existingIndex = catalog.findIndex(
-    (p) => p.code.replace(/^#/, '').trim().toLowerCase() === normCode.toLowerCase()
-  );
+  const rawCode = product.code.replace(/^#/, '').trim();
+  const isNoCode = !rawCode || rawCode === '-';
+  const normCode = isNoCode ? '-' : rawCode;
+
+  let existingIndex = -1;
+  if (!isNoCode) {
+    existingIndex = catalog.findIndex(
+      (p) => p.code.toLowerCase() !== '-' && p.code.replace(/^#/, '').trim().toLowerCase() === normCode.toLowerCase()
+    );
+  } else {
+    // If no code, only match if the exact product name exists
+    existingIndex = catalog.findIndex(
+      (p) => normalizeForComparison(p.name) === normalizeForComparison(product.name)
+    );
+  }
 
   if (existingIndex >= 0) {
     const next = [...catalog];
     next[existingIndex] = {
-      code: normCode,
+      code: isNoCode && next[existingIndex].code !== '-' ? next[existingIndex].code : normCode,
       name: product.name.trim() || next[existingIndex].name,
       price: product.price >= 0 ? product.price : next[existingIndex].price,
     };

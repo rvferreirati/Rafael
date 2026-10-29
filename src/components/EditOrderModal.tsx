@@ -151,7 +151,7 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
   const handleAddCustomItem = () => {
     const newItem: LineItem = {
       id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      code: `#${items.length + 1}`,
+      code: '-',
       description: 'Novo Produto / Serviço',
       quantity: 1,
       unitPrice: 0,
@@ -357,7 +357,7 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
                         type="text"
                         value={it.code}
                         onChange={(e) => handleItemCodeChange(it.id, e.target.value)}
-                        placeholder="#Cód"
+                        placeholder="-"
                         className="w-full text-xs font-mono font-bold text-indigo-700 bg-indigo-50/50 border border-indigo-200 rounded-lg px-2 py-1.5 focus:bg-white focus:ring-1 focus:ring-indigo-500 outline-none"
                       />
                     </div>

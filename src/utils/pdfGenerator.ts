@@ -108,7 +108,7 @@ export function generateSalesOrderPDF(order: SalesOrder, company: CompanyProfile
   // --- 5. Line Items Table ---
   const tableRows = order.items.map((item, index) => [
     (index + 1).toString(),
-    item.code || `SKU-${1000 + index}`,
+    item.code && item.code.trim() !== '' ? item.code : '-',
     item.description || 'Produto',
     item.quantity.toString(),
     `${currency} ${item.unitPrice.toFixed(2)}`,
