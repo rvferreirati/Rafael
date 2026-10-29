@@ -108,9 +108,63 @@ export function parseCatalogText(text: string): CatalogProduct[] {
       results.push({ code: `SKU-${100 + results.length}`, name: hyphenParts[0], price });
       continue;
     }
+
+    // 4. Try Space-separated: "47 Bloco Polidor R$ 3,00" or "47 Bloco Polidor 3.00"
+    const spaceMatch = line.match(/^#?([0-9A-Za-z_-]+)\s+(.+?)\s+(?:r\$\s*)?([0-9]+(?:[.,][0-9]{1,2})?)$/i);
+    if (spaceMatch) {
+      const code = spaceMatch[1];
+      const name = spaceMatch[2].trim();
+      const rawPrice = spaceMatch[3];
+      const price = parseFloat(rawPrice.replace(',', '.')) || 0;
+      if (name && !isNaN(price)) {
+        results.push({ code, name, price });
+        continue;
+      }
+    }
   }
 
-  return results;
+  // Deduplicate within the parsed text itself (keeping last occurrence)
+  const uniqueMap = new Map<string, CatalogProduct>();
+  for (const item of results) {
+    const key = item.code.trim().toLowerCase();
+    uniqueMap.set(key, item);
+  }
+
+  return Array.from(uniqueMap.values());
+}
+
+/**
+ * Inserts or updates an existing catalog product by code.
+ * If the product code already exists, updates name and price.
+ */
+export function upsertCatalogProduct(catalog: CatalogProduct[], product: CatalogProduct): CatalogProduct[] {
+  const normCode = product.code.replace(/^#/, '').trim();
+  const existingIndex = catalog.findIndex(
+    (p) => p.code.replace(/^#/, '').trim().toLowerCase() === normCode.toLowerCase()
+  );
+
+  if (existingIndex >= 0) {
+    const next = [...catalog];
+    next[existingIndex] = {
+      code: normCode,
+      name: product.name.trim() || next[existingIndex].name,
+      price: product.price >= 0 ? product.price : next[existingIndex].price,
+    };
+    return next;
+  }
+
+  return [...catalog, { ...product, code: normCode, name: product.name.trim() }];
+}
+
+/**
+ * Merges incoming products into current catalog, updating existing products and adding new ones.
+ */
+export function mergeCatalogProducts(current: CatalogProduct[], incoming: CatalogProduct[]): CatalogProduct[] {
+  let result = [...current];
+  for (const item of incoming) {
+    result = upsertCatalogProduct(result, item);
+  }
+  return result;
 }
 
 export function normalizeForComparison(str: string): string {
