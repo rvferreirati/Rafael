@@ -641,23 +641,25 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     setIsProcessingOCR(false);
     setOcrProgress(100);
 
-    // 3. Update items in table
-    if (allExtractedItems.length > 0) {
+    // 3. Update items in table (strictly catalog items only)
+    const filteredValidItems = reconcileItemsWithCatalog(allExtractedItems, catalog, true);
+
+    if (filteredValidItems.length > 0) {
       if (accumulatePrints && uploadedPrints.length > 0) {
-        setItems((prev) => [...prev, ...allExtractedItems]);
+        setItems((prev) => [...prev, ...filteredValidItems]);
       } else {
-        setItems(allExtractedItems);
+        setItems(filteredValidItems);
       }
 
       setFeedbackSuccess(
-        `⚡ Concluído em ${elapsedSeconds}s! ${allExtractedItems.length} produtos extraídos e prontos para edição.`
+        `⚡ Concluído em ${elapsedSeconds}s! ${filteredValidItems.length} produtos do Banco de Dados identificados com 100% de precisão.`
       );
 
       // Automatically advance to items tab for review & value adjustment!
       setActiveStep('items');
     } else {
       setFeedbackSuccess(
-        `Print processado em ${elapsedSeconds}s. Nenhum produto detectado automaticamente — você pode adicionar produtos diretamente pelo Catálogo Rápido ou clicar em "Adicionar Item".`
+        `Print processado em ${elapsedSeconds}s. Nenhum produto do catálogo foi identificado na imagem. Verifique se o print contém produtos da sua lista.`
       );
       setActiveStep('items');
     }

@@ -3,6 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
+import { matchItemWithCatalog } from './src/utils/productCatalog';
 
 dotenv.config();
 
@@ -86,18 +87,24 @@ app.post('/api/ocr', async (req, res) => {
 BANCO DE DADOS OFICIAL DE PRODUTOS PARA CONCILIAÇÃO:
 ${catalogSummary}
 
-REGRA DE OURO PARA NOMES TRUNCADOS / RETICÊNCIAS ("..."):
+REGRA CRÍTICA DE OURO - SÓ RETORNAR ITENS QUE ESTÃO NO BANCO DE DADOS:
+- Retorne EXCLUSIVAMENTE produtos que correspondam a produtos do BANCO DE DADOS OFICIAL acima.
+- NUNCA crie produtos a partir de valores de preço soltos (como "R$ 520", "5,20", "11,50").
+- NUNCA crie produtos a partir de botões ou links de categorias (como "Mostrar tudo", "Cílios Mostrar tudo", "Ver tudo", "Ver carrinho").
+- Se algo não for um produto do banco de dados, DESCARTE-O e NÃO o inclua na lista.
+
+REGRA PARA NOMES TRUNCADOS / RETICÊNCIAS ("..."):
 - Os prints de celulares e WhatsApp frequentemente CORTAM os nomes dos produtos com "..." (exemplo: "Lixa mini canário pur..." ou "Lixa moeda preta po...").
 - Sempre que a imagem contiver um item cujo texto bate com o início ou palavras de um produto do BANCO DE DADOS acima, use:
-  1. "code": O código oficial do produto (ex: "#47", "#46", "#10").
-  2. "description": O nome COMPLETO oficial do banco de dados (ex: "Bloco Polidor", "Lixa mini canário pura arte com...", "Lixa moeda preta podóloga grão...").
-  3. "unitPrice": O valor unitário do item (ex: 3.00, 7.70, 6.93).
+  1. "code": O código oficial do produto (ex: "#47", "#46", "#10", "#22", "#56").
+  2. "description": O nome COMPLETO oficial do banco de dados (ex: "Bloco Polidor", "Lixa mini canário pura arte com...", "Lixa moeda preta podóloga grão...", "Protetor de bacia pedicure com...").
+  3. "unitPrice": O valor unitário do item (ex: 3.00, 7.70, 6.93, 11.50).
   4. "quantity": A quantidade informada no print (ex: 1, 2, etc.). Padrão 1.
   5. "total": quantity * unitPrice.
 
 FILTROS DE RUÍDO:
 - NUNCA inclua cabeçalhos, botões ("Continuar comprando", "Subtotal", "Ver carrinho"), relógio ou status do celular.
-- Extraia TODOS os produtos visíveis no carrinho.
+- Extraia TODOS os produtos visíveis no carrinho que estejam no banco.
 
 Retorne estritamente em JSON compatível com o schema definido.`;
 
@@ -175,35 +182,27 @@ Retorne estritamente em JSON compatível com o schema definido.`;
       return res.json({ items: [], message: 'Nenhum produto detectado na imagem.' });
     }
 
-    // Post-reconciliation against catalog
-    const reconciledItems = (parsed.items || []).map((it: any) => {
+    // Post-reconciliation against catalog - STRICT: SÓ INSERIR SE ESTIVER NO BANCO DE DADOS
+    const reconciledItems: any[] = [];
+    for (const it of (parsed.items || [])) {
       const desc = String(it.description || '').trim();
-      const normDesc = desc.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const rawPrice = Number(it.unitPrice) || 0;
+      const match = matchItemWithCatalog(desc, rawPrice, activeCatalog);
       
-      const matched = activeCatalog.find((catItem: any) => {
-        const catNorm = catItem.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\.{2,}/g, '').trim();
-        // Check code match
-        if (it.code && (it.code === catItem.code || it.code === `#${catItem.code}`)) return true;
-        // Check name start or inclusion
-        if (normDesc.startsWith(catNorm) || catNorm.startsWith(normDesc)) return true;
-        // Check key word matching (e.g. "bloco polidor", "lixa mini canario", "lixa moeda preta")
-        const keyWords = catNorm.split(' ').filter((w: string) => w.length >= 4);
-        return keyWords.length > 0 && keyWords.every((kw: string) => normDesc.includes(kw));
-      });
-
-      if (matched) {
-        const q = Number(it.quantity) || 1;
-        const p = Number(it.unitPrice) > 0 ? Number(it.unitPrice) : Number(matched.price);
-        return {
-          code: `#${matched.code}`,
-          description: matched.name,
+      if (match) {
+        const q = Number(it.quantity) && Number(it.quantity) > 0 ? Number(it.quantity) : 1;
+        const p = rawPrice > 0 ? rawPrice : Number(match.product.price);
+        reconciledItems.push({
+          code: `#${match.product.code}`,
+          description: match.product.name,
           quantity: q,
           unitPrice: p,
           total: q * p,
-        };
+        });
       }
-      return it;
-    });
+      // If it did NOT match the catalog (e.g. "R$ 520", "Cilios Mostrar tudo", etc.):
+      // DO NOT INSERT! Strictly filter out non-database items as requested by user.
+    }
 
     parsed.items = reconciledItems;
     return res.json(parsed);

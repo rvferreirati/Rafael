@@ -113,18 +113,57 @@ export function parseCatalogText(text: string): CatalogProduct[] {
   return results;
 }
 
-function normalizeForComparison(str: string): string {
+export function normalizeForComparison(str: string): string {
   return str
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // remove diacritics (acentos)
+    .replace(/[\u0300-\u036f]/g, '') // remove diacritics
     .replace(/[\s.·=~–—\-:;,•\*\[\]\(\)\#\+]+/g, ' ') // replace symbols with space
     .trim();
 }
 
 /**
- * Matches detected OCR/Text against catalog to find corresponding official product.
- * Resolves truncated names (e.g. "Lixa mini canário pur..." or "X Bloco Polidor TE")
+ * Checks if a detected string is UI noise, raw price numbers (e.g. "R$ 520"),
+ * or buttons like "Mostrar tudo", which must NEVER be added to the order.
+ */
+export function isInvalidProductNoise(text: string): boolean {
+  if (!text) return true;
+  const clean = text.toLowerCase().trim();
+  if (clean.length < 2) return true;
+
+  // 1. Raw price numbers like "R$ 520", "520", "R$ 5,20", "$ 11.50"
+  if (/^(?:r\$|\$|€)?\s*[0-9]+([.,][0-9]{1,2})?\s*$/i.test(clean)) return true;
+
+  // 2. Buttons, links, or navigation words
+  const uiKeywords = [
+    'mostrar tudo',
+    'ver tudo',
+    'ver mais',
+    'ver carrinho',
+    'toque para ver',
+    'continuar comprando',
+    'voltar as compras',
+    'subtotal',
+    'total estimado',
+    'enviar mensagem',
+    'comprar agora',
+    'adicionar mais',
+    'itens no carrinho',
+  ];
+  for (const kw of uiKeywords) {
+    if (clean.includes(kw)) return true;
+  }
+
+  // 3. Strings without any actual word letters
+  if (!/[a-zà-ÿ]{2,}/i.test(clean)) return true;
+
+  return false;
+}
+
+/**
+ * Matches detected OCR/Text against catalog with comprehensive scoring.
+ * Differentiates items sharing common prefixes (e.g. #22 Manicure R$5,20 vs #56 Pedicure R$11,50)
+ * and strictly rejects unmatched or noise lines.
  */
 export function matchItemWithCatalog(
   detectedText: string,
@@ -132,91 +171,150 @@ export function matchItemWithCatalog(
   catalog: CatalogProduct[] = DEFAULT_CATALOG
 ): { product: CatalogProduct; confidence: number; reason: string } | null {
   if (!detectedText || detectedText.trim().length === 0) return null;
+  if (isInvalidProductNoise(detectedText)) return null;
 
   const rawNorm = normalizeForComparison(detectedText);
-  // Remove known prefixes like "x ", "bi ", "bl ", "pur", "po", "esto"
+  // Remove known OCR prefixes
   const cleanNorm = rawNorm
     .replace(/^(?:x|bi|bl)\s+/i, '')
     .replace(/\b(?:pur|po|esto|te)\b/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 
-  // 1. Direct Code match (e.g. text starts with "47" or "#47")
-  const codeMatch = detectedText.match(/^(?:#|c[óo]d(?:igo)?[\s.:#-]*)?(\d{1,4})\b/i);
-  if (codeMatch && codeMatch[1]) {
-    const num = codeMatch[1];
-    const found = catalog.find((c) => c.code === num);
-    if (found) {
-      return { product: found, confidence: 0.98, reason: `Código #${found.code} exato` };
-    }
-  }
+  if (isInvalidProductNoise(cleanNorm)) return null;
 
-  // 2. Exact or substring match in name
+  // Check direct Code match (e.g. text starts with "47" or "#47")
+  const codeMatch = detectedText.match(/^(?:#|c[óo]d(?:igo)?[\s.:#-]*)?(\d{1,4})\b/i);
+  const detectedCodeNum = codeMatch && codeMatch[1] ? codeMatch[1] : null;
+
+  let bestProduct: CatalogProduct | null = null;
+  let bestScore = -999;
+  let bestReason = '';
+
   for (const prod of catalog) {
+    let score = 0;
+    const reasons: string[] = [];
+
     const prodNorm = normalizeForComparison(prod.name);
-    // Remove the trailing "..." if any
     const prodClean = prodNorm.replace(/\.{2,}/g, '').trim();
 
-    // Direct contains or equality
-    if (cleanNorm === prodClean || cleanNorm.startsWith(prodClean) || prodClean.startsWith(cleanNorm)) {
+    // 1. Code Match (+120 points)
+    if (detectedCodeNum && (prod.code === detectedCodeNum || prod.code === detectedCodeNum.replace(/^0+/, ''))) {
+      score += 120;
+      reasons.push(`Código #${prod.code}`);
+    }
+
+    // 2. Exact or Substring Name Equality (+100 points)
+    if (cleanNorm === prodClean) {
+      score += 100;
+      reasons.push('Nome idêntico');
+    } else if (cleanNorm.startsWith(prodClean) || prodClean.startsWith(cleanNorm)) {
       if (cleanNorm.length >= 4) {
-        return { product: prod, confidence: 0.95, reason: `Nome compatível com catálogo` };
+        score += 70;
+        reasons.push('Início compatível');
       }
     }
 
-    // Token-based match (e.g. "bloco polidor", "lixa mini canario", "lixa moeda preta", "algodao prensado")
+    // 3. Word / Token Matching (+20 per matching key word)
     const prodTokens = prodClean.split(' ').filter((t) => t.length >= 3);
     const textTokens = cleanNorm.split(' ').filter((t) => t.length >= 3);
 
-    if (prodTokens.length > 0 && textTokens.length > 0) {
-      const matchCount = textTokens.filter((token) =>
-        prodTokens.some((pt) => pt.startsWith(token) || token.startsWith(pt))
-      ).length;
-
-      // If at least 2 key words match, or 100% of the detected words match
-      if (matchCount >= 2 || (matchCount >= 1 && textTokens.length <= 2 && matchCount === textTokens.length)) {
-        return { product: prod, confidence: 0.9, reason: `Termos-chave: ${matchCount} palavras correspondentes` };
+    let matchedWordCount = 0;
+    for (const token of textTokens) {
+      if (prodTokens.some((pt) => pt.startsWith(token) || token.startsWith(pt))) {
+        matchedWordCount++;
+        score += 25;
       }
+    }
+
+    if (matchedWordCount > 0) {
+      reasons.push(`${matchedWordCount} palavras coincidentes`);
+    }
+
+    // 4. Specific differentiator checks for similar products:
+    // e.g. "pedicure" vs "manicure" or "plastica"
+    if (cleanNorm.includes('pedi') && prodClean.includes('pedi')) {
+      score += 40;
+      reasons.push('Termo pedicure');
+    } else if (cleanNorm.includes('pedi') && prodClean.includes('mani')) {
+      score -= 50; // Penalty for manicure when pedicure is detected
+    }
+
+    if (cleanNorm.includes('mani') && prodClean.includes('mani')) {
+      score += 40;
+      reasons.push('Termo manicure');
+    } else if (cleanNorm.includes('mani') && prodClean.includes('pedi')) {
+      score -= 50;
+    }
+
+    // 5. Price verification (+45 points if price matches table)
+    if (detectedPrice && detectedPrice > 0) {
+      const priceDiff = Math.abs(prod.price - detectedPrice);
+      if (priceDiff < 0.08) {
+        score += 45;
+        reasons.push(`Preço exato R$ ${prod.price.toFixed(2)}`);
+      } else if (priceDiff > 1.0 && score > 0) {
+        // Light penalty if price differs significantly
+        score -= 15;
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestProduct = prod;
+      bestReason = reasons.join(', ');
     }
   }
 
-  // 3. Fallback: match by price if provided and matches uniquely in catalog
-  if (detectedPrice && detectedPrice > 0) {
-    const matchingPrices = catalog.filter((p) => Math.abs(p.price - detectedPrice) < 0.05);
-    if (matchingPrices.length === 1) {
-      // Check if there is at least one letter overlap
-      const candidate = matchingPrices[0];
-      const candNorm = normalizeForComparison(candidate.name);
-      const hasAnyToken = candNorm.split(' ').some((tok) => tok.length >= 4 && cleanNorm.includes(tok));
-      if (hasAnyToken) {
-        return { product: candidate, confidence: 0.85, reason: `Preço R$ ${detectedPrice.toFixed(2)} + termo similar` };
-      }
-    }
+  // Minimum score threshold to accept as a valid catalog item
+  // (Prevents accidental matches of UI words or unrelated text)
+  if (bestScore >= 45 && bestProduct) {
+    const confidence = Math.min(1.0, 0.5 + bestScore / 150);
+    return {
+      product: bestProduct,
+      confidence,
+      reason: bestReason,
+    };
   }
 
   return null;
 }
 
 /**
- * Reconciles an array of LineItems with the catalog
+ * Reconciles an array of LineItems with the catalog.
+ * By default, strictCatalogOnly = true: ONLY ITEMS IN THE DATABASE WILL BE INSERTED!
+ * Discards noises like "R$ 520", "Mostrar tudo", or any unregistered item.
  */
-export function reconcileItemsWithCatalog<T extends { code?: string; description: string; unitPrice: number; quantity: number; total?: number }>(
+export function reconcileItemsWithCatalog<
+  T extends { code?: string; description: string; unitPrice: number; quantity: number; total?: number }
+>(
   items: T[],
-  catalog: CatalogProduct[] = DEFAULT_CATALOG
+  catalog: CatalogProduct[] = DEFAULT_CATALOG,
+  strictCatalogOnly: boolean = true
 ): T[] {
-  return items.map((item) => {
+  const result: T[] = [];
+
+  for (const item of items) {
+    // If description is invalid noise, skip immediately
+    if (isInvalidProductNoise(item.description)) {
+      continue;
+    }
+
     const match = matchItemWithCatalog(item.description, item.unitPrice, catalog);
     if (match) {
       const unitPrice = item.unitPrice > 0 ? item.unitPrice : match.product.price;
-      const qty = item.quantity || 1;
-      return {
+      const qty = item.quantity && item.quantity > 0 ? item.quantity : 1;
+      result.push({
         ...item,
         code: `#${match.product.code}`,
         description: match.product.name,
         unitPrice,
         total: qty * unitPrice,
-      };
+      });
+    } else if (!strictCatalogOnly) {
+      result.push(item);
     }
-    return item;
-  });
+  }
+
+  return result;
 }
