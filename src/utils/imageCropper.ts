@@ -36,17 +36,27 @@ export function optimizeImageForOCR(
   quality = 0.85
 ): Promise<string> {
   return new Promise((resolve) => {
-    if (dataUrlOrSrc.startsWith('data:application/pdf')) {
+    if (!dataUrlOrSrc || dataUrlOrSrc.startsWith('data:application/pdf')) {
       resolve(dataUrlOrSrc);
       return;
     }
 
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+    // CRITICAL: Do NOT set crossOrigin on data: or blob: URIs on Safari/iOS WebKit,
+    // as it triggers a SecurityError or onerror on mobile!
+    if (!dataUrlOrSrc.startsWith('data:') && !dataUrlOrSrc.startsWith('blob:')) {
+      img.crossOrigin = 'anonymous';
+    }
+
     img.onload = () => {
       try {
-        let width = img.width;
-        let height = img.height;
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+
+        if (!width || !height) {
+          resolve(dataUrlOrSrc);
+          return;
+        }
 
         // Scale down if larger than maxDimension while preserving aspect ratio
         if (width > maxDimension || height > maxDimension) {
@@ -74,13 +84,15 @@ export function optimizeImageForOCR(
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
         // Convert to optimized JPEG (much faster network transfer than uncompressed PNG)
-        resolve(canvas.toDataURL('image/jpeg', quality));
+        const result = canvas.toDataURL('image/jpeg', quality);
+        resolve(result);
       } catch (e) {
         console.warn('Falha na otimização de imagem, usando original:', e);
         resolve(dataUrlOrSrc);
       }
     };
-    img.onerror = () => {
+    img.onerror = (err) => {
+      console.warn('Erro ao carregar imagem para otimização:', err);
       resolve(dataUrlOrSrc);
     };
     img.src = dataUrlOrSrc;
@@ -93,22 +105,29 @@ export function cropImageToCenter(
 ): Promise<string> {
   return new Promise((resolve) => {
     // If it's a PDF, cannot crop via canvas Image
-    if (dataUrlOrSrc.startsWith('data:application/pdf')) {
+    if (!dataUrlOrSrc || dataUrlOrSrc.startsWith('data:application/pdf')) {
       resolve(dataUrlOrSrc);
       return;
     }
 
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+    // CRITICAL: Do NOT set crossOrigin on data: or blob: URIs on Safari/iOS WebKit
+    if (!dataUrlOrSrc.startsWith('data:') && !dataUrlOrSrc.startsWith('blob:')) {
+      img.crossOrigin = 'anonymous';
+    }
+
     img.onload = () => {
       try {
-        const topCut = Math.max(0, (bounds.topPercent / 100) * img.height);
-        const bottomCut = Math.max(0, (bounds.bottomPercent / 100) * img.height);
-        const leftCut = Math.max(0, (bounds.leftPercent / 100) * img.width);
-        const rightCut = Math.max(0, (bounds.rightPercent / 100) * img.width);
+        const fullW = img.naturalWidth || img.width;
+        const fullH = img.naturalHeight || img.height;
 
-        let sw = Math.max(10, img.width - leftCut - rightCut);
-        let sh = Math.max(10, img.height - topCut - bottomCut);
+        const topCut = Math.max(0, (bounds.topPercent / 100) * fullH);
+        const bottomCut = Math.max(0, (bounds.bottomPercent / 100) * fullH);
+        const leftCut = Math.max(0, (bounds.leftPercent / 100) * fullW);
+        const rightCut = Math.max(0, (bounds.rightPercent / 100) * fullW);
+
+        let sw = Math.max(10, fullW - leftCut - rightCut);
+        let sh = Math.max(10, fullH - topCut - bottomCut);
 
         // Limit dimensions for speed
         const maxDimension = 1400;
@@ -143,9 +162,11 @@ export function cropImageToCenter(
         resolve(dataUrlOrSrc);
       }
     };
-    img.onerror = () => {
+    img.onerror = (err) => {
+      console.warn('Erro ao carregar imagem para recorte:', err);
       resolve(dataUrlOrSrc);
     };
     img.src = dataUrlOrSrc;
   });
 }
+
