@@ -1,20 +1,24 @@
 import React, { useState } from 'react';
-import { FileText, Download, Trash2, Search, Calendar, DollarSign, Package, Send } from 'lucide-react';
+import { FileText, Download, Trash2, Search, Calendar, DollarSign, Package, Send, Edit3 } from 'lucide-react';
 import { SalesOrder, CompanyProfile } from '../types';
 import { generateSalesOrderPDF } from '../utils/pdfGenerator';
 import { SendOrderModal } from './SendOrderModal';
+import { EditOrderModal } from './EditOrderModal';
 
 interface HistoryTabProps {
   orders: SalesOrder[];
   company: CompanyProfile;
   onDeleteOrder: (id: string) => void;
+  onUpdateOrder?: (updatedOrder: SalesOrder) => void;
 }
 
-export const HistoryTab: React.FC<HistoryTabProps> = ({ orders, company, onDeleteOrder }) => {
+export const HistoryTab: React.FC<HistoryTabProps> = ({ orders, company, onDeleteOrder, onUpdateOrder }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'confirmed' | 'draft' | 'delivered'>('all');
   const [selectedOrderToSend, setSelectedOrderToSend] = useState<SalesOrder | null>(null);
   const [isSendOpen, setIsSendOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<SalesOrder | null>(null);
+  const [isEditOpen, setIsEditOpen] = useState(false);
 
   const filtered = orders.filter((o) => {
     const matchesSearch =
@@ -187,6 +191,18 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ orders, company, onDelet
                       <button
                         type="button"
                         onClick={() => {
+                          setEditingOrder(order);
+                          setIsEditOpen(true);
+                        }}
+                        className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold rounded-lg inline-flex items-center gap-1 transition-colors border border-amber-200"
+                        title="Alterar quantidades, valores e gerar PDF novamente"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Editar</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
                           setSelectedOrderToSend(order);
                           setIsSendOpen(true);
                         }}
@@ -225,6 +241,27 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ orders, company, onDelet
           </div>
         )}
       </div>
+
+      {/* Modal de Edição (Quantidades, Valores e Novo PDF) */}
+      <EditOrderModal
+        isOpen={isEditOpen}
+        onClose={() => {
+          setIsEditOpen(false);
+          setEditingOrder(null);
+        }}
+        order={editingOrder}
+        company={company}
+        onSave={(updatedOrder) => {
+          if (onUpdateOrder) {
+            onUpdateOrder(updatedOrder);
+          }
+          setEditingOrder(updatedOrder);
+        }}
+        onSaveAndSend={(updatedOrder) => {
+          setSelectedOrderToSend(updatedOrder);
+          setIsSendOpen(true);
+        }}
+      />
 
       {/* Modal de Envio para pedidos do histórico */}
       <SendOrderModal

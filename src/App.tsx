@@ -166,6 +166,10 @@ export default function App() {
     setOrders((prev) => prev.filter((o) => o.id !== id));
   };
 
+  const handleUpdateOrder = (updatedOrder: SalesOrder) => {
+    setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
+  };
+
   // Customer Handlers
   const handleAddCustomer = (newCust: Customer) => {
     setCustomers((prev) => [newCust, ...prev]);
@@ -217,6 +221,7 @@ export default function App() {
             orders={orders}
             company={company}
             onDeleteOrder={handleDeleteOrder}
+            onUpdateOrder={handleUpdateOrder}
           />
         )}
 
