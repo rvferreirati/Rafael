@@ -112,94 +112,155 @@ export async function resetServerCatalog(): Promise<CatalogProduct[]> {
 }
 
 /**
- * Parses user-pasted text (TSV, CSV, or formatted lines like "47 - Bloco Polidor - R$ 3,00")
+ * Parses user-pasted text from Excel, WhatsApp, ERPs, or typed lists.
+ * Supports any format, including:
+ * - "237 Extra Brilho roxo 100 ml R$ 14,40"
+ * - "- Recuperador de esmaltes 30 ml R$ 8,00"
+ * - "24 Lixa Plantar gr 220 c/100un R$ 19,00 un"
+ * - "- Lixa boomerang Apolinário R$ 2,80 cada"
+ * - "(41) Bloco Polidor Honey Rosa R$ 3,00"
+ * - "COD: 42 Bloco polidor Honey Girl branca 3,00"
+ * - "Ref 319 - Bloco polidor Santa Clara - 7.99"
+ * - "47. Bloco Polidor 3,00"
+ * - Spreadsheets with 2, 3 or 4 columns (Code \t Name \t Qty \t Price)
+ * - Lines without price (imported with price R$ 0,00 for later editing)
  */
 export function parseCatalogText(text: string): CatalogProduct[] {
   const lines = text
     .split(/\r?\n/)
-    .map((l) => l.trim())
+    .map((l) => l.trim().replace(/\u00A0/g, ' '))
     .filter((l) => l.length > 0);
 
   const results: CatalogProduct[] = [];
 
-  for (const line of lines) {
-    // Skip header line if it looks like "Código Description Preço"
-    if (/c[óo]digo.*descri/i.test(line)) continue;
+  for (let idx = 0; idx < lines.length; idx++) {
+    const rawLine = lines[idx];
+    // Skip header lines like "Código Description Preço"
+    if (/^(?:c[óo]digo|item|sku|ref|descri|pre[çc]o)/i.test(rawLine)) continue;
 
-    // 1. Try Tab-separated
-    if (line.includes('\t')) {
-      const parts = line.split('\t').map((p) => p.trim());
+    // 1. Try Tab or Semicolon separated (Spreadsheet copy-paste / CSV)
+    if (rawLine.includes('\t') || rawLine.includes(';')) {
+      const sep = rawLine.includes('\t') ? '\t' : ';';
+      const parts = rawLine.split(sep).map((p) => p.trim()).filter(Boolean);
       if (parts.length >= 2) {
-        const code = parts[0].replace(/^#/, '');
-        const name = parts[1];
-        const rawPrice = parts[2] || '0';
-        const price = parseFloat(rawPrice.replace(/[^0-9.,]/g, '').replace(',', '.')) || 0;
+        let code = '-';
+        let name = '';
+        let price = 0;
+
+        if (parts.length === 2) {
+          const p2 = parseFloat(parts[1].replace(/[^0-9.,]/g, '').replace(',', '.'));
+          if (!isNaN(p2) && (parts[1].includes('R$') || parts[1].includes(',') || parts[1].includes('.'))) {
+            name = parts[0];
+            price = p2;
+          } else {
+            code = parts[0];
+            name = parts[1];
+          }
+        } else if (parts.length === 3) {
+          code = parts[0].replace(/^[#(]|[\).\:]$/g, '').trim();
+          name = parts[1];
+          price = parseFloat(parts[2].replace(/[^0-9.,]/g, '').replace(',', '.')) || 0;
+        } else if (parts.length >= 4) {
+          code = parts[0].replace(/^[#(]|[\).\:]$/g, '').trim();
+          name = parts[1];
+          const lastPart = parts[parts.length - 1];
+          price = parseFloat(lastPart.replace(/[^0-9.,]/g, '').replace(',', '.')) || 0;
+        }
+
         if (name) {
-          results.push({ code, name, price });
+          code = code.replace(/^(?:c[óo]d(?:igo)?|ref(?:er[êe]ncia)?|sku|id)[\s.:#-]*/i, '').trim() || '-';
+          results.push({
+            id: `cat-${code === '-' ? 'nocode-' + idx : code}-${Date.now()}`,
+            code: code || '-',
+            name: name.replace(/^-\s*/, '').trim(),
+            price,
+          });
           continue;
         }
       }
     }
 
-    // 2. Try Semicolon or comma separated
-    if (line.includes(';') || (line.includes(',') && !line.includes('R$'))) {
-      const sep = line.includes(';') ? ';' : ',';
-      const parts = line.split(sep).map((p) => p.trim());
-      if (parts.length >= 2) {
-        const code = parts[0].replace(/^#/, '');
-        const name = parts[1];
-        const rawPrice = parts[2] || '0';
-        const price = parseFloat(rawPrice.replace(/[^0-9.,]/g, '').replace(',', '.')) || 0;
-        if (name) {
-          results.push({ code, name, price });
-          continue;
-        }
-      }
+    // 2. Strip trailing quantity suffixes like "un", "cada", "unidades", "/un", "pct"
+    let cleanLine = rawLine.replace(
+      /(?:r\$\s*)?[\s\/\-]*(?:unid(?:ades?)?|unidade|unids?|und?|cada|pe[çc]as?|p[çc]a|pct|pacote|cx|caixa)\.?\s*$/i,
+      ''
+    ).trim();
+
+    // 3. Find Price at the end of line (e.g. "R$ 14,40", "14,40", "R$ 8.00", "3.00", "3")
+    const priceRegex = /(?:r\$\s*|\$\s*|rs\s*|brl\s*)?([0-9]+(?:[.,][0-9]{1,2})?)\s*$/i;
+    const priceMatch = cleanLine.match(priceRegex);
+
+    let price = 0;
+    let remainder = cleanLine;
+
+    if (priceMatch && priceMatch.index !== undefined && priceMatch.index > 0) {
+      const rawPrice = priceMatch[1];
+      price = parseFloat(rawPrice.replace(',', '.')) || 0;
+      remainder = cleanLine.substring(0, priceMatch.index).trim();
+      remainder = remainder.replace(/(?:r\$\s*|\$\s*|rs\s*|brl\s*)\s*$/i, '').trim();
+      remainder = remainder.replace(/[-–—:.\s]+$/, '').trim();
     }
 
-    // 3. Try hyphen-separated: "47 - Bloco Polidor - R$ 3,00" or "Bloco Polidor - R$ 3,00"
-    const hyphenParts = line.split(/\s*-\s*/);
-    if (hyphenParts.length >= 3) {
-      const code = hyphenParts[0].replace(/^#/, '').trim() || '-';
-      const name = hyphenParts[1];
-      const rawPrice = hyphenParts[2];
-      const price = parseFloat(rawPrice.replace(/[^0-9.,]/g, '').replace(',', '.')) || 0;
-      results.push({ code, name, price });
-      continue;
-    } else if (hyphenParts.length === 2) {
-      const rawPrice = hyphenParts[1];
-      const price = parseFloat(rawPrice.replace(/[^0-9.,]/g, '').replace(',', '.')) || 0;
-      // Item without code: use '-' as code
-      results.push({ code: '-', name: hyphenParts[0].trim(), price });
-      continue;
-    }
+    // 4. Extract Code from beginning of remainder
+    let code = '-';
+    let name = remainder;
 
-    // 4. Try Space-separated: "47 Bloco Polidor R$ 3,00" or "- Bloco Polidor 3.00"
-    const spaceMatch = line.match(/^#?([0-9A-Za-z_-]+)\s+(.+?)\s+(?:r\$\s*)?([0-9]+(?:[.,][0-9]{1,2})?)$/i);
-    if (spaceMatch) {
-      const code = spaceMatch[1].trim() || '-';
-      const name = spaceMatch[2].trim();
-      const rawPrice = spaceMatch[3];
-      const price = parseFloat(rawPrice.replace(',', '.')) || 0;
-      if (name && !isNaN(price)) {
-        results.push({ code, name, price });
-        continue;
+    // Case A: Explicit hyphen: "- Produto..."
+    if (remainder.startsWith('-')) {
+      code = '-';
+      name = remainder.replace(/^-\s*/, '').trim();
+    }
+    // Case B: Parenthesized or bracketed: "(41) Produto..." or "[41] Produto..."
+    else if (/^[\(\[]\s*([0-9A-Za-z_-]{1,10})\s*[\)\]]\s*/.test(remainder)) {
+      const m = remainder.match(/^[\(\[]\s*([0-9A-Za-z_-]{1,10})\s*[\)\]]\s*(.*)$/);
+      if (m) {
+        code = m[1].trim();
+        name = m[2].trim();
       }
     }
-
-    // 5. Try Item without code, space separated: "Bloco Polidor 3,00"
-    const noCodeMatch = line.match(/^(.+?)\s+(?:r\$\s*)?([0-9]+(?:[.,][0-9]{1,2}))$/i);
-    if (noCodeMatch) {
-      const name = noCodeMatch[1].trim().replace(/^-\s*/, '');
-      const price = parseFloat(noCodeMatch[2].replace(',', '.')) || 0;
-      if (name && !isNaN(price)) {
-        results.push({ code: '-', name, price });
-        continue;
+    // Case C: Prefixed with COD, REF, SKU: "COD: 42 Produto..." or "REF 319 - Produto..."
+    else if (/^(?:c[óo]d(?:igo)?|ref(?:er[êe]ncia)?|sku|id)[\s.:#-]*([0-9A-Za-z_-]{1,10})[\s.:#-]+(.*)$/i.test(remainder)) {
+      const m = remainder.match(/^(?:c[óo]d(?:igo)?|ref(?:er[êe]ncia)?|sku|id)[\s.:#-]*([0-9A-Za-z_-]{1,10})[\s.:#-]+(.*)$/i);
+      if (m) {
+        code = m[1].trim();
+        name = m[2].trim();
       }
     }
+    // Case D: Dotted number: "47. Bloco Polidor"
+    else if (/^#?([0-9]{1,6})\.\s+(.*)$/.test(remainder)) {
+      const m = remainder.match(/^#?([0-9]{1,6})\.\s+(.*)$/);
+      if (m) {
+        code = m[1].trim();
+        name = m[2].trim();
+      }
+    }
+    // Case E: Standard numeric or SKU code followed by space or hyphen: "237 Extra Brilho..." or "47 - Bloco..."
+    else if (/^#?([0-9A-Za-z_-]{1,10})(?:\s*-\s*|\s+)(.*)$/.test(remainder)) {
+      const m = remainder.match(/^#?([0-9A-Za-z_-]{1,10})(?:\s*-\s*|\s+)(.*)$/);
+      if (m && m[2]?.trim()) {
+        code = m[1].trim();
+        name = m[2].trim();
+      } else {
+        code = '-';
+        name = remainder.trim();
+      }
+    } else {
+      code = '-';
+      name = remainder.trim();
+    }
+
+    name = name.replace(/^[-–—:.\s]+/, '').replace(/[-–—:.\s]+$/, '').trim();
+    if (!name) continue;
+
+    results.push({
+      id: `cat-${code === '-' ? 'nocode-' + idx : code}-${Date.now()}`,
+      code: code || '-',
+      name,
+      price,
+    });
   }
 
-  // Deduplicate within the parsed text itself (keeping last occurrence for keyed items, but preserving separate items with code '-')
+  // Deduplicate within the parsed text itself
   const uniqueMap = new Map<string, CatalogProduct>();
   results.forEach((item, index) => {
     const isNoCode = !item.code || item.code.trim() === '-';
@@ -435,6 +496,52 @@ export function matchItemWithCatalog(
       reasons.push('Termo manicure');
     } else if (cleanNorm.includes('mani') && prodClean.includes('pedi')) {
       score -= 50;
+    }
+
+    // Specific differentiator for grit numbers (gr 80, gr 100, gr 120, gr 150, gr 220, gr 320, gr 400)
+    const gritMatchesText = cleanNorm.match(/\b(?:grao|gr)\s*(\d{2,3})\b/);
+    const gritMatchesProd = prodClean.match(/\b(?:grao|gr)\s*(\d{2,3})\b/);
+    if (gritMatchesText && gritMatchesProd) {
+      if (gritMatchesText[1] === gritMatchesProd[1]) {
+        score += 85;
+        reasons.push(`Grão ${gritMatchesText[1]} exato`);
+      } else {
+        score -= 95; // Strong penalty if different grit numbers
+      }
+    }
+
+    // Specific differentiator for Plantar vs Laminar
+    if (cleanNorm.includes('plantar') && prodClean.includes('plantar')) {
+      score += 45;
+      reasons.push('Termo plantar');
+    } else if (cleanNorm.includes('plantar') && prodClean.includes('laminar')) {
+      score -= 75;
+    }
+
+    if (cleanNorm.includes('laminar') && prodClean.includes('laminar')) {
+      score += 45;
+      reasons.push('Termo laminar');
+    } else if (cleanNorm.includes('laminar') && prodClean.includes('plantar')) {
+      score -= 75;
+    }
+
+    // Specific differentiator for colors and brands in similar lines (Rosa, Branca, Santa Clara, Honey)
+    if (cleanNorm.includes('rosa') && prodClean.includes('rosa')) {
+      score += 35;
+    } else if (cleanNorm.includes('rosa') && prodClean.includes('branca')) {
+      score -= 50;
+    }
+
+    if (cleanNorm.includes('branca') && prodClean.includes('branca')) {
+      score += 35;
+    } else if (cleanNorm.includes('branca') && prodClean.includes('rosa')) {
+      score -= 50;
+    }
+
+    if (cleanNorm.includes('santa clara') && prodClean.includes('santa clara')) {
+      score += 65;
+    } else if (cleanNorm.includes('santa clara') && !prodClean.includes('santa clara')) {
+      score -= 60;
     }
 
     // 6. Price verification (+45 points if price matches table)
