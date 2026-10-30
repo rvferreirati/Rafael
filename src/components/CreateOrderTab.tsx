@@ -49,6 +49,8 @@ import {
   DEFAULT_CATALOG,
   loadStoredCatalog,
   saveStoredCatalog,
+  pushServerCatalog,
+  syncCatalogWithServer,
   reconcileItemsWithCatalog
 } from '../utils/productCatalog';
 import { CatalogModal } from './CatalogModal';
@@ -75,6 +77,8 @@ interface CreateOrderTabProps {
   onNavigateToCustomers: () => void;
   catalog?: CatalogProduct[];
   onUpdateCatalog?: (newCatalog: CatalogProduct[]) => void;
+  onSyncCatalog?: () => void;
+  isSyncing?: boolean;
 }
 
 export type OrderFlowStep = 'upload' | 'items' | 'review';
@@ -100,6 +104,8 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   onNavigateToCustomers,
   catalog: propCatalog,
   onUpdateCatalog,
+  onSyncCatalog,
+  isSyncing,
 }) => {
   // --- Active Step in Order Creation Flow ---
   const [activeStep, setActiveStep] = useState<OrderFlowStep>('upload');
@@ -136,6 +142,16 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       setCatalog(propCatalog);
     }
   }, [propCatalog]);
+
+  const handleCatalogChange = (newCatalog: CatalogProduct[]) => {
+    setCatalog(newCatalog);
+    if (onUpdateCatalog) {
+      onUpdateCatalog(newCatalog);
+    } else {
+      pushServerCatalog(newCatalog);
+    }
+  };
+
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState<boolean>(false);
 
   // Line items (extracted from prints and fully editable)
@@ -1208,6 +1224,18 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                 <Database className="w-3.5 h-3.5 text-indigo-600" />
                 <span>Banco de Dados ({catalog.length})</span>
               </button>
+              {onSyncCatalog && (
+                <button
+                  type="button"
+                  onClick={onSyncCatalog}
+                  disabled={isSyncing}
+                  className="px-3 py-2 bg-sky-50 hover:bg-sky-100 active:bg-sky-200 text-sky-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-sky-300 shadow-2xs disabled:opacity-60"
+                  title="Sincronizar Banco de Dados com todos os celulares e computadores"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-sky-600 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar com Celular'}</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -1932,7 +1960,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
         isOpen={isCatalogModalOpen}
         onClose={() => setIsCatalogModalOpen(false)}
         catalog={catalog}
-        onUpdateCatalog={setCatalog}
+        onUpdateCatalog={handleCatalogChange}
       />
     </div>
   );

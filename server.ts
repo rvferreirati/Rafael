@@ -4,7 +4,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
-import { matchItemWithCatalog, normalizeForComparison } from './src/utils/productCatalog';
+import { matchItemWithCatalog, normalizeForComparison, DEFAULT_CATALOG } from './src/utils/productCatalog';
 
 dotenv.config();
 
@@ -27,24 +27,7 @@ const ai = new GoogleGenAI({
 // Centralized Catalog file for real-time synchronization across PC & Mobile
 const CATALOG_FILE_PATH = path.join(path.resolve(), 'data', 'catalog.json');
 
-const INITIAL_CATALOG = [
-  { id: 'cat-47', code: '47', name: 'Bloco Polidor', price: 3.0 },
-  { id: 'cat-46', code: '46', name: 'Lixa mini canário pura arte com...', price: 7.7 },
-  { id: 'cat-10', code: '10', name: 'Lixa moeda preta podóloga grão...', price: 6.93 },
-  { id: 'cat-12', code: '12', name: 'Algodão prensado com 1000 unidades', price: 13.0 },
-  { id: 'cat-14', code: '14', name: 'Algodão bola 95 g', price: 5.0 },
-  { id: 'cat-23', code: '23', name: 'Rolo de Algodão 500 g', price: 20.0 },
-  { id: 'cat-22', code: '22', name: 'Protetor de bacia plástica Manic...', price: 5.2 },
-  { id: 'cat-56', code: '56', name: 'Protetor de bacia pedicure com 50 unidades', price: 11.5 },
-  { id: 'cat-66', code: '66', name: 'Touca plástica descartável com...', price: 8.51 },
-  { id: 'cat-17', code: '17', name: 'Cílios Mix 8 a 14', price: 30.0 },
-  { id: 'cat-90', code: '90', name: 'Cílios Magina D-lash Naturals Knot-free flares 10 mm', price: 12.0 },
-  { id: 'cat-34', code: '34', name: 'Cílios Postiços 7P-C 14mm', price: 11.0 },
-  { id: 'cat-secante', code: '-', name: 'Secante rápido não oleoso com11 ml', price: 6.9 },
-  { id: 'cat-boneca', code: '-', name: 'Colorama Boneca', price: 5.9 },
-  { id: 'cat-bastao', code: '-', name: 'Bastão Inox c/ silicone ,Isis', price: 7.07 },
-  { id: 'cat-palito', code: '-', name: 'Palito para depilação com 100 unidades', price: 7.5 },
-];
+const INITIAL_CATALOG = DEFAULT_CATALOG;
 
 function readServerCatalog(): any[] {
   try {

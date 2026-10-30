@@ -8,7 +8,7 @@ import { QuickStartModal } from './components/QuickStartModal';
 import { CatalogModal } from './components/CatalogModal';
 import { LoginScreen } from './components/LoginScreen';
 import { Customer, SalesOrder, CompanyProfile } from './types';
-import { CatalogProduct, loadStoredCatalog, fetchServerCatalog, pushServerCatalog } from './utils/productCatalog';
+import { CatalogProduct, loadStoredCatalog, fetchServerCatalog, pushServerCatalog, syncCatalogWithServer } from './utils/productCatalog';
 import { HelpCircle, Sparkles } from 'lucide-react';
 
 const STORAGE_KEYS = {
@@ -105,19 +105,33 @@ export default function App() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [catalog, setCatalog] = useState<CatalogProduct[]>(loadStoredCatalog);
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  // Synchronize catalog with server (cross-device sync for PC and Mobile phone)
+  // Synchronize catalog with server (bidirectional sync between PC and Mobile)
+  const handleGlobalSync = async () => {
+    setIsSyncing(true);
+    try {
+      const result = await syncCatalogWithServer(catalog);
+      setCatalog(result.catalog);
+    } catch (err) {
+      console.warn('Erro ao sincronizar catálogo:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   useEffect(() => {
-    fetchServerCatalog().then((serverCat) => {
-      if (serverCat) {
-        setCatalog(serverCat);
+    // On load, synchronize between local storage and server
+    syncCatalogWithServer().then((result) => {
+      if (result && result.catalog) {
+        setCatalog(result.catalog);
       }
     });
 
     const handleFocus = () => {
-      fetchServerCatalog().then((serverCat) => {
-        if (serverCat) {
-          setCatalog(serverCat);
+      syncCatalogWithServer().then((result) => {
+        if (result && result.catalog) {
+          setCatalog(result.catalog);
         }
       });
     };
@@ -250,6 +264,8 @@ export default function App() {
         onTabChange={setActiveTab}
         onOpenHelp={() => setIsHelpOpen(true)}
         onOpenCatalog={() => setIsCatalogOpen(true)}
+        onSyncCatalog={handleGlobalSync}
+        isSyncing={isSyncing}
         catalogCount={catalog.length}
         ordersCount={orders.length}
         customersCount={customers.length}
@@ -267,6 +283,8 @@ export default function App() {
             onNavigateToCustomers={() => setActiveTab('customers')}
             catalog={catalog}
             onUpdateCatalog={handleUpdateCatalog}
+            onSyncCatalog={handleGlobalSync}
+            isSyncing={isSyncing}
           />
         )}
 

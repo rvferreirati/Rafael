@@ -16,7 +16,8 @@ import {
   AlertTriangle,
   ArrowRight,
   Layers,
-  Filter
+  Filter,
+  RefreshCw
 } from 'lucide-react';
 import {
   CatalogProduct,
@@ -25,6 +26,7 @@ import {
   saveStoredCatalog,
   pushServerCatalog,
   resetServerCatalog,
+  syncCatalogWithServer,
   upsertCatalogProduct,
   mergeCatalogProducts
 } from '../utils/productCatalog';
@@ -50,6 +52,16 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
   const [importText, setImportText] = useState('');
   const [previewItems, setPreviewItems] = useState<CatalogProduct[] | null>(null);
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    const result = await syncCatalogWithServer(catalog);
+    onUpdateCatalog(result.catalog);
+    setIsSyncing(false);
+    setFeedback(result.message);
+    setTimeout(() => setFeedback(null), 3500);
+  };
 
   // Inline editing for existing items (using unique identifier)
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -329,7 +341,18 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
               />
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleManualSync}
+                disabled={isSyncing}
+                className="px-3.5 py-2 text-xs font-bold bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-60"
+                title="Sincronizar Banco de Dados com todos os dispositivos (PC e Celular)"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar com Todos'}</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => {

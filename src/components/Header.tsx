@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileSpreadsheet, Users, History, Building2, HelpCircle, FileCheck2, Database, LogOut, User } from 'lucide-react';
+import { FileSpreadsheet, Users, History, Building2, HelpCircle, FileCheck2, Database, LogOut, User, RefreshCw } from 'lucide-react';
 
 export type TabType = 'create-order' | 'customers' | 'history' | 'settings';
 
@@ -8,6 +8,8 @@ interface HeaderProps {
   onTabChange: (tab: TabType) => void;
   onOpenHelp: () => void;
   onOpenCatalog?: () => void;
+  onSyncCatalog?: () => void;
+  isSyncing?: boolean;
   ordersCount: number;
   customersCount: number;
   catalogCount?: number;
@@ -20,6 +22,8 @@ export const Header: React.FC<HeaderProps> = ({
   onTabChange,
   onOpenHelp,
   onOpenCatalog,
+  onSyncCatalog,
+  isSyncing,
   ordersCount,
   customersCount,
   catalogCount,
@@ -113,6 +117,19 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="text-[10px] bg-emerald-200 text-emerald-900 font-bold px-1.5 py-0.5 rounded-full">
                   {catalogCount ?? 12}
                 </span>
+              </button>
+            )}
+            {onSyncCatalog && (
+              <button
+                type="button"
+                onClick={onSyncCatalog}
+                disabled={isSyncing}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-sky-800 bg-sky-50 hover:bg-sky-100 active:bg-sky-200 border border-sky-300 rounded-lg transition-all shadow-xs cursor-pointer disabled:opacity-60"
+                title="Sincronizar Banco de Dados com todos os dispositivos (PC e Celular)"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-sky-600 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span className="hidden md:inline">Sincronizar com Todos</span>
+                <span className="md:hidden">Sincronizar</span>
               </button>
             )}
             <button

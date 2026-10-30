@@ -9,22 +9,377 @@ export const STORAGE_KEY_CATALOG = 'artex7_product_catalog_v1';
 
 // Seeded with the user's official database from fdg_48c9d622.txt
 export const DEFAULT_CATALOG: CatalogProduct[] = [
-  { id: 'cat-47', code: '47', name: 'Bloco Polidor', price: 3.0 },
-  { id: 'cat-46', code: '46', name: 'Lixa mini canário pura arte com...', price: 7.7 },
-  { id: 'cat-10', code: '10', name: 'Lixa moeda preta podóloga grão...', price: 6.93 },
-  { id: 'cat-12', code: '12', name: 'Algodão prensado com 1000 unidades', price: 13.0 },
-  { id: 'cat-14', code: '14', name: 'Algodão bola 95 g', price: 5.0 },
-  { id: 'cat-23', code: '23', name: 'Rolo de Algodão 500 g', price: 20.0 },
-  { id: 'cat-22', code: '22', name: 'Protetor de bacia plástica Manic...', price: 5.2 },
-  { id: 'cat-56', code: '56', name: 'Protetor de bacia pedicure com 50 unidades', price: 11.5 },
-  { id: 'cat-66', code: '66', name: 'Touca plástica descartável com...', price: 8.51 },
-  { id: 'cat-17', code: '17', name: 'Cílios Mix 8 a 14', price: 30.0 },
-  { id: 'cat-90', code: '90', name: 'Cílios Magina D-lash Naturals Knot-free flares 10 mm', price: 12.0 },
-  { id: 'cat-34', code: '34', name: 'Cílios Postiços 7P-C 14mm', price: 11.0 },
-  { id: 'cat-secante', code: '-', name: 'Secante rápido não oleoso com11 ml', price: 6.9 },
-  { id: 'cat-boneca', code: '-', name: 'Colorama Boneca', price: 5.9 },
-  { id: 'cat-bastao', code: '-', name: 'Bastão Inox c/ silicone ,Isis', price: 7.07 },
-  { id: 'cat-palito', code: '-', name: 'Palito para depilação com 100 unidades', price: 7.5 },
+  {
+    "code": "47",
+    "name": "Bloco Polidor",
+    "price": 3
+  },
+  {
+    "code": "46",
+    "name": "Lixa mini canário Pura Arte com 100",
+    "price": 7.7
+  },
+  {
+    "code": "10",
+    "name": "Lixa moeda preta podóloga grão 100 com 24 unidades",
+    "price": 6.93
+  },
+  {
+    "code": "12",
+    "name": "Lixa mini parda Pop c/100",
+    "price": 5.3
+  },
+  {
+    "id": "cat-14",
+    "code": "14",
+    "name": "Algodão bola 95 g",
+    "price": 5
+  },
+  {
+    "code": "23",
+    "name": "Lixa Plantar gr 150 c/100 un",
+    "price": 19
+  },
+  {
+    "code": "22",
+    "name": "Lixa Plantar gr 120 c/un",
+    "price": 19
+  },
+  {
+    "id": "cat-56",
+    "code": "56",
+    "name": "Protetor de bacia pedicure com 50 unidades",
+    "price": 11.5
+  },
+  {
+    "id": "cat-66",
+    "code": "66",
+    "name": "Touca plástica descartável com...",
+    "price": 8.51
+  },
+  {
+    "id": "cat-17",
+    "code": "17",
+    "name": "Cílios Mix 8 a 14",
+    "price": 30
+  },
+  {
+    "id": "cat-90",
+    "code": "90",
+    "name": "Cílios Magina D-lash Naturals Knot-free flares 10 mm",
+    "price": 12
+  },
+  {
+    "id": "cat-34",
+    "code": "34",
+    "name": "Cílios Postiços 7P-C 14mm",
+    "price": 11
+  },
+  {
+    "id": "cat-secante",
+    "code": "-",
+    "name": "Secante rápido não oleoso com11 ml",
+    "price": 6.9
+  },
+  {
+    "id": "cat-boneca",
+    "code": "-",
+    "name": "Colorama Boneca",
+    "price": 5.9
+  },
+  {
+    "id": "cat-bastao",
+    "code": "-",
+    "name": "Bastão Inox c/ silicone ,Isis",
+    "price": 7.07
+  },
+  {
+    "id": "cat-palito",
+    "code": "-",
+    "name": "Palito para depilação com 100 unidades",
+    "price": 7.5
+  },
+  {
+    "id": "cat-41-1793386889774",
+    "code": "41",
+    "name": "Bloco Polidor Honey Rosa",
+    "price": 3
+  },
+  {
+    "id": "cat-nocode-2-1793386889775",
+    "code": "-",
+    "name": "Lixa mini Rosa Pura Arte Pop c/100 unidades",
+    "price": 6.6
+  },
+  {
+    "id": "cat-nocode-3-1793386889775",
+    "code": "-",
+    "name": "Mini lixa buffer",
+    "price": 1.89
+  },
+  {
+    "id": "cat-nocode-4-1793386889775",
+    "code": "-",
+    "name": "Lixa Marrom Madeira Honey Girl",
+    "price": 1.9
+  },
+  {
+    "id": "cat-42-1793386889775",
+    "code": "42",
+    "name": "Bloco polidor Honey Girl branca",
+    "price": 3
+  },
+  {
+    "id": "cat-nocode-6-1793386889775",
+    "code": "-",
+    "name": "Mini Bloco polidor c/10 unidades",
+    "price": 6
+  },
+  {
+    "id": "cat-nocode-7-1793386889775",
+    "code": "-",
+    "name": "Lady Misty",
+    "price": 14
+  },
+  {
+    "id": "cat-nocode-8-1793386889775",
+    "code": "-",
+    "name": "Lixa Banana X & D com 12 unidades",
+    "price": 22.5
+  },
+  {
+    "id": "cat-24-1793386889775",
+    "code": "24",
+    "name": "Lixa Plantar gr 220 c/100un",
+    "price": 19
+  },
+  {
+    "id": "cat-346-1793386889775",
+    "code": "346",
+    "name": "Lixa Lâminar gr 120 c/100 un",
+    "price": 19
+  },
+  {
+    "id": "cat-20-1793386889775",
+    "code": "20",
+    "name": "Lixas Plantar gr 80 c/100",
+    "price": 19
+  },
+  {
+    "id": "cat-28-1793386889775",
+    "code": "28",
+    "name": "Lixas Laminar gr 220 com 100 unidades",
+    "price": 19
+  },
+  {
+    "id": "cat-44-1793386889775",
+    "code": "44",
+    "name": "Lixa pedicuro c/12 lixas",
+    "price": 9.89
+  },
+  {
+    "id": "cat-nocode-14-1793386889775",
+    "code": "-",
+    "name": "Lixa boomerang Apolinário",
+    "price": 2.8
+  },
+  {
+    "code": "8",
+    "name": "Secante rápido não oleoso com 11 ml",
+    "price": 6.9
+  },
+  {
+    "id": "cat-nocode-16-1793386889775",
+    "code": "-",
+    "name": "Lixa boomerang Honey Girl",
+    "price": 2.4
+  },
+  {
+    "id": "cat-nocode-17-1793386889775",
+    "code": "-",
+    "name": "Suporte Lâminar",
+    "price": 19
+  },
+  {
+    "id": "cat-nocode-18-1793386889775",
+    "code": "-",
+    "name": "Lixa para gel boomerang",
+    "price": 2.5
+  },
+  {
+    "id": "cat-15-1793386889775",
+    "code": "15",
+    "name": "Lixa mini parda Pura Arte c/100 unidades",
+    "price": 6.9
+  },
+  {
+    "id": "cat-11-1793386889775",
+    "code": "11",
+    "name": "Lixa moeda amarela podóloga grão 80 com 24 unidades",
+    "price": 8.4
+  },
+  {
+    "id": "cat-nocode-26-1793386889775",
+    "code": "-",
+    "name": "Lixa média Canário Pura Arte com 100 unidades",
+    "price": 9.79
+  },
+  {
+    "id": "cat-nocode-27-1793386889775",
+    "code": "-",
+    "name": "Anel de lixa com 50 unidades",
+    "price": 6.5
+  },
+  {
+    "id": "cat-nocode-28-1793386889775",
+    "code": "-",
+    "name": "Lixa Polidora buffer",
+    "price": 3
+  },
+  {
+    "id": "cat-18-1793386889775",
+    "code": "18",
+    "name": "Lixa parda Tradicional Pura Arte com 100 unidades",
+    "price": 12.5
+  },
+  {
+    "id": "cat-nocode-30-1793386889775",
+    "code": "-",
+    "name": "Lixa parda média Pura Arte com 100 unidades",
+    "price": 8.74
+  },
+  {
+    "id": "cat-nocode-31-1793386889775",
+    "code": "-",
+    "name": "Suporte Plantar",
+    "price": 18
+  },
+  {
+    "id": "cat-308-1793386889775",
+    "code": "308",
+    "name": "Lixa refil preta grão 100 com 50",
+    "price": 18.8
+  },
+  {
+    "id": "cat-319-1793386889776",
+    "code": "319",
+    "name": "Bloco polidor Santa Clara",
+    "price": 7.99
+  },
+  {
+    "id": "cat-29-1793386889776",
+    "code": "29",
+    "name": "Lixa Lâminar gr 320 c/100 un",
+    "price": 19
+  },
+  {
+    "id": "cat-27-1793386889776",
+    "code": "27",
+    "name": "Lixa Lâminar gr 100 c/100un",
+    "price": 19
+  },
+  {
+    "id": "cat-30-1793386889776",
+    "code": "30",
+    "name": "Lixa Lâminar gr 400 c/100 un",
+    "price": 19
+  },
+  {
+    "id": "cat-21-1793386889776",
+    "code": "21",
+    "name": "Lixa Plantar gr 100 c/100 un",
+    "price": 19
+  },
+  {
+    "id": "cat-26-1793386889776",
+    "code": "26",
+    "name": "Lixa Lâminar gr 80 c/100 un",
+    "price": 19
+  },
+  {
+    "id": "cat-237-1793386889777",
+    "code": "237",
+    "name": "Extra Brilho roxo 100 ml",
+    "price": 14.4
+  },
+  {
+    "id": "cat-235-1793386889777",
+    "code": "235",
+    "name": "Extra brilho incolor 100 ml",
+    "price": 14.4
+  },
+  {
+    "id": "cat-4-1793386889777",
+    "code": "4",
+    "name": "Removedor à base de acetona de 900 ml",
+    "price": 39.9
+  },
+  {
+    "id": "cat-nocode-3-1793386889777",
+    "code": "-",
+    "name": "Recuperador de esmaltes 30 ml",
+    "price": 8
+  },
+  {
+    "id": "cat-357-1793386889777",
+    "code": "357",
+    "name": "Acetona 100 ml",
+    "price": 4.5
+  },
+  {
+    "id": "cat-5-1793386889777",
+    "code": "5",
+    "name": "Removedor Acetona 500 ml",
+    "price": 22
+  },
+  {
+    "id": "cat-nocode-6-1793386889777",
+    "code": "-",
+    "name": "Removedor sem acetona 500 ml",
+    "price": 22
+  },
+  {
+    "id": "cat-6-1793386889777",
+    "code": "6",
+    "name": "Tôp coat roxo, inimigo das bolinhas",
+    "price": 6.9
+  },
+  {
+    "id": "cat-7-1793386889777",
+    "code": "7",
+    "name": "Top coat incolor inimigo das bolinhas",
+    "price": 6.9
+  },
+  {
+    "id": "cat-9-1793386889777",
+    "code": "9",
+    "name": "Base 100 ml super fina, secagem rápida",
+    "price": 14.4
+  },
+  {
+    "id": "cat-nocode-11-1793386889777",
+    "code": "-",
+    "name": "Base Fosca",
+    "price": 3
+  },
+  {
+    "id": "cat-nocode-12-1793386889777",
+    "code": "-",
+    "name": "Base Bomba",
+    "price": 12
+  },
+  {
+    "id": "cat-algodao-prensado",
+    "code": "-",
+    "name": "Algodão prensado com 1000 unidades",
+    "price": 13
+  },
+  {
+    "id": "cat-rolo-algodao",
+    "code": "-",
+    "name": "Rolo de Algodão 500 g",
+    "price": 20
+  }
 ];
 
 export function loadStoredCatalog(): CatalogProduct[] {
@@ -109,6 +464,55 @@ export async function resetServerCatalog(): Promise<CatalogProduct[]> {
   }
   saveStoredCatalog(DEFAULT_CATALOG);
   return DEFAULT_CATALOG;
+}
+
+/**
+ * Fully synchronizes local catalog with server catalog (PC <-> Mobile sync)
+ * If this device has more items, pushes to server so other devices get them.
+ * If server has more items, pulls to this device.
+ */
+export async function syncCatalogWithServer(currentCatalog?: CatalogProduct[]): Promise<{
+  catalog: CatalogProduct[];
+  count: number;
+  message: string;
+}> {
+  try {
+    const local = currentCatalog && currentCatalog.length > 0 ? currentCatalog : loadStoredCatalog();
+
+    // Fetch server catalog
+    const res = await fetch('/api/catalog');
+    if (res.ok) {
+      const data = await res.json();
+      const serverItems: CatalogProduct[] = Array.isArray(data.catalog) ? data.catalog : [];
+
+      if (local.length > serverItems.length) {
+        // This device has more items (e.g. user imported on PC)! Push to server
+        await pushServerCatalog(local);
+        return {
+          catalog: local,
+          count: local.length,
+          message: `Banco sincronizado com sucesso! ${local.length} produtos enviados para todos os dispositivos.`,
+        };
+      } else {
+        // Server has equal or more items (e.g. phone syncing from PC)
+        saveStoredCatalog(serverItems);
+        return {
+          catalog: serverItems,
+          count: serverItems.length,
+          message: `Banco atualizado da nuvem! ${serverItems.length} produtos sincronizados neste dispositivo.`,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao sincronizar com servidor:', err);
+  }
+
+  const fallback = currentCatalog || loadStoredCatalog();
+  return {
+    catalog: fallback,
+    count: fallback.length,
+    message: `Sincronizado localmente com ${fallback.length} produtos.`,
+  };
 }
 
 /**
