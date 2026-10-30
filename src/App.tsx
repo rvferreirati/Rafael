@@ -6,6 +6,7 @@ import { HistoryTab } from './components/HistoryTab';
 import { SettingsTab } from './components/SettingsTab';
 import { QuickStartModal } from './components/QuickStartModal';
 import { CatalogModal } from './components/CatalogModal';
+import { SyncModal } from './components/SyncModal';
 import { LoginScreen } from './components/LoginScreen';
 import { Customer, SalesOrder, CompanyProfile } from './types';
 import { CatalogProduct, loadStoredCatalog, fetchServerCatalog, pushServerCatalog, syncCatalogWithServer } from './utils/productCatalog';
@@ -105,33 +106,26 @@ export default function App() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [catalog, setCatalog] = useState<CatalogProduct[]>(loadStoredCatalog);
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Synchronize catalog with server (bidirectional sync between PC and Mobile)
-  const handleGlobalSync = async () => {
-    setIsSyncing(true);
-    try {
-      const result = await syncCatalogWithServer(catalog);
-      setCatalog(result.catalog);
-    } catch (err) {
-      console.warn('Erro ao sincronizar catálogo:', err);
-    } finally {
-      setIsSyncing(false);
-    }
+  // Open the dedicated Sync Modal with real-time PC & Mobile status
+  const handleOpenSyncModal = () => {
+    setIsSyncModalOpen(true);
   };
 
   useEffect(() => {
-    // On load, synchronize between local storage and server
-    syncCatalogWithServer().then((result) => {
-      if (result && result.catalog) {
-        setCatalog(result.catalog);
+    // On load and window focus, update catalog from server
+    fetchServerCatalog().then((serverCat) => {
+      if (serverCat && serverCat.length > 0) {
+        setCatalog(serverCat);
       }
     });
 
     const handleFocus = () => {
-      syncCatalogWithServer().then((result) => {
-        if (result && result.catalog) {
-          setCatalog(result.catalog);
+      fetchServerCatalog().then((serverCat) => {
+        if (serverCat && serverCat.length > 0) {
+          setCatalog(serverCat);
         }
       });
     };
@@ -264,7 +258,7 @@ export default function App() {
         onTabChange={setActiveTab}
         onOpenHelp={() => setIsHelpOpen(true)}
         onOpenCatalog={() => setIsCatalogOpen(true)}
-        onSyncCatalog={handleGlobalSync}
+        onSyncCatalog={handleOpenSyncModal}
         isSyncing={isSyncing}
         catalogCount={catalog.length}
         ordersCount={orders.length}
@@ -283,7 +277,7 @@ export default function App() {
             onNavigateToCustomers={() => setActiveTab('customers')}
             catalog={catalog}
             onUpdateCatalog={handleUpdateCatalog}
-            onSyncCatalog={handleGlobalSync}
+            onSyncCatalog={handleOpenSyncModal}
             isSyncing={isSyncing}
           />
         )}
@@ -354,6 +348,14 @@ export default function App() {
         isOpen={isCatalogOpen}
         onClose={() => setIsCatalogOpen(false)}
         catalog={catalog}
+        onUpdateCatalog={handleUpdateCatalog}
+      />
+
+      {/* Dedicated PC <-> Mobile Sync Modal */}
+      <SyncModal
+        isOpen={isSyncModalOpen}
+        onClose={() => setIsSyncModalOpen(false)}
+        localCatalog={catalog}
         onUpdateCatalog={handleUpdateCatalog}
       />
     </div>

@@ -4,7 +4,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
-import { matchItemWithCatalog, normalizeForComparison, DEFAULT_CATALOG } from './src/utils/productCatalog';
+import { matchItemWithCatalog, normalizeForComparison, DEFAULT_CATALOG } from './src/utils/productCatalog.ts';
 
 dotenv.config();
 
@@ -29,6 +29,12 @@ const CATALOG_FILE_PATH = path.join(path.resolve(), 'data', 'catalog.json');
 
 const INITIAL_CATALOG = DEFAULT_CATALOG;
 
+interface CatalogStoreWrapper {
+  updatedAt: number;
+  updatedBy: string;
+  catalog: any[];
+}
+
 function readServerCatalog(): any[] {
   try {
     if (fs.existsSync(CATALOG_FILE_PATH)) {
@@ -36,6 +42,8 @@ function readServerCatalog(): any[] {
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed)) {
         return parsed;
+      } else if (parsed && Array.isArray(parsed.catalog)) {
+        return parsed.catalog;
       }
     }
   } catch (err) {
@@ -44,10 +52,37 @@ function readServerCatalog(): any[] {
   return INITIAL_CATALOG;
 }
 
-function writeServerCatalog(catalog: any[]): boolean {
+function readServerCatalogMeta(): { catalog: any[]; updatedAt: number; updatedBy: string } {
+  try {
+    if (fs.existsSync(CATALOG_FILE_PATH)) {
+      const data = fs.readFileSync(CATALOG_FILE_PATH, 'utf-8');
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) {
+        const stat = fs.statSync(CATALOG_FILE_PATH);
+        return { catalog: parsed, updatedAt: stat.mtimeMs, updatedBy: 'sistema' };
+      } else if (parsed && Array.isArray(parsed.catalog)) {
+        return {
+          catalog: parsed.catalog,
+          updatedAt: parsed.updatedAt || Date.now(),
+          updatedBy: parsed.updatedBy || 'dispositivo',
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao ler metadata de data/catalog.json:', err);
+  }
+  return { catalog: INITIAL_CATALOG, updatedAt: Date.now(), updatedBy: 'sistema' };
+}
+
+function writeServerCatalog(catalog: any[], deviceName: string = 'dispositivo'): boolean {
   try {
     fs.mkdirSync(path.dirname(CATALOG_FILE_PATH), { recursive: true });
-    fs.writeFileSync(CATALOG_FILE_PATH, JSON.stringify(catalog, null, 2), 'utf-8');
+    const payload: CatalogStoreWrapper = {
+      updatedAt: Date.now(),
+      updatedBy: deviceName,
+      catalog,
+    };
+    fs.writeFileSync(CATALOG_FILE_PATH, JSON.stringify(payload, null, 2), 'utf-8');
     return true;
   } catch (err) {
     console.error('Erro ao escrever data/catalog.json:', err);
@@ -55,21 +90,33 @@ function writeServerCatalog(catalog: any[]): boolean {
   }
 }
 
-// API Route: Get shared catalog (synced across PC & Mobile)
+// API Route: Get shared catalog with metadata (synced across PC & Mobile)
 app.get('/api/catalog', (req, res) => {
-  const catalog = readServerCatalog();
-  return res.json({ catalog });
+  const meta = readServerCatalogMeta();
+  return res.json({
+    catalog: meta.catalog,
+    updatedAt: meta.updatedAt,
+    updatedBy: meta.updatedBy,
+    count: meta.catalog.length,
+  });
 });
 
 // API Route: Update shared catalog (synced across PC & Mobile)
 app.post('/api/catalog', (req, res) => {
-  const { catalog } = req.body;
+  const { catalog, device } = req.body;
   if (!Array.isArray(catalog)) {
     return res.status(400).json({ error: 'O catálogo deve ser uma lista (array).' });
   }
-  const ok = writeServerCatalog(catalog);
+  const ok = writeServerCatalog(catalog, device || 'dispositivo');
   if (ok) {
-    return res.json({ success: true, count: catalog.length, catalog });
+    const meta = readServerCatalogMeta();
+    return res.json({
+      success: true,
+      count: meta.catalog.length,
+      catalog: meta.catalog,
+      updatedAt: meta.updatedAt,
+      updatedBy: meta.updatedBy,
+    });
   } else {
     return res.status(500).json({ error: 'Falha ao salvar catálogo no servidor.' });
   }
@@ -77,9 +124,10 @@ app.post('/api/catalog', (req, res) => {
 
 // API Route: Reset shared catalog to initial defaults
 app.post('/api/catalog/reset', (req, res) => {
-  const ok = writeServerCatalog(INITIAL_CATALOG);
+  const ok = writeServerCatalog(INITIAL_CATALOG, 'restauração padrão');
   if (ok) {
-    return res.json({ success: true, catalog: INITIAL_CATALOG });
+    const meta = readServerCatalogMeta();
+    return res.json({ success: true, catalog: meta.catalog, count: meta.catalog.length });
   } else {
     return res.status(500).json({ error: 'Falha ao restaurar catálogo.' });
   }

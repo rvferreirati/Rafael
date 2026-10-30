@@ -466,15 +466,53 @@ export async function resetServerCatalog(): Promise<CatalogProduct[]> {
   return DEFAULT_CATALOG;
 }
 
+export interface ServerCatalogInfo {
+  catalog: CatalogProduct[];
+  count: number;
+  updatedAt: number;
+  updatedBy: string;
+}
+
+/**
+ * Fetches server catalog along with metadata (updated timestamp and device)
+ */
+export async function fetchServerCatalogInfo(): Promise<ServerCatalogInfo | null> {
+  try {
+    const res = await fetch('/api/catalog');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.catalog)) {
+        return {
+          catalog: data.catalog,
+          count: data.catalog.length,
+          updatedAt: data.updatedAt || Date.now(),
+          updatedBy: data.updatedBy || 'servidor',
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao obter informações do catálogo do servidor:', err);
+  }
+  return null;
+}
+
+export type SyncMode = 'pull' | 'push' | 'merge' | 'smart';
+
 /**
  * Fully synchronizes local catalog with server catalog (PC <-> Mobile sync)
- * If this device has more items, pushes to server so other devices get them.
- * If server has more items, pulls to this device.
+ * Modes:
+ * - 'pull': Overwrite local with server catalog (e.g. download mobile's items to PC)
+ * - 'push': Overwrite server with local catalog (e.g. publish PC's items to mobile)
+ * - 'merge': Intelligent merge: preserves both sets without dropping any product!
  */
-export async function syncCatalogWithServer(currentCatalog?: CatalogProduct[]): Promise<{
+export async function syncCatalogWithServer(
+  currentCatalog?: CatalogProduct[],
+  mode: SyncMode = 'merge'
+): Promise<{
   catalog: CatalogProduct[];
   count: number;
   message: string;
+  source: 'server' | 'local' | 'merged';
 }> {
   try {
     const local = currentCatalog && currentCatalog.length > 0 ? currentCatalog : loadStoredCatalog();
@@ -485,23 +523,37 @@ export async function syncCatalogWithServer(currentCatalog?: CatalogProduct[]): 
       const data = await res.json();
       const serverItems: CatalogProduct[] = Array.isArray(data.catalog) ? data.catalog : [];
 
-      if (local.length > serverItems.length) {
-        // This device has more items (e.g. user imported on PC)! Push to server
-        await pushServerCatalog(local);
-        return {
-          catalog: local,
-          count: local.length,
-          message: `Banco sincronizado com sucesso! ${local.length} produtos enviados para todos os dispositivos.`,
-        };
-      } else {
-        // Server has equal or more items (e.g. phone syncing from PC)
+      if (mode === 'pull') {
         saveStoredCatalog(serverItems);
         return {
           catalog: serverItems,
           count: serverItems.length,
-          message: `Banco atualizado da nuvem! ${serverItems.length} produtos sincronizados neste dispositivo.`,
+          message: `Baixado da nuvem! ${serverItems.length} produtos carregados no computador.`,
+          source: 'server',
         };
       }
+
+      if (mode === 'push') {
+        await pushServerCatalog(local);
+        return {
+          catalog: local,
+          count: local.length,
+          message: `Enviado para a nuvem! ${local.length} produtos disponíveis para todos os celulares.`,
+          source: 'local',
+        };
+      }
+
+      // Default: 'merge' / 'smart'
+      const merged = mergeCatalogProducts(serverItems, local);
+      saveStoredCatalog(merged);
+      await pushServerCatalog(merged);
+
+      return {
+        catalog: merged,
+        count: merged.length,
+        message: `Sincronização concluída! ${merged.length} produtos integrados entre celular e computador.`,
+        source: 'merged',
+      };
     }
   } catch (err) {
     console.warn('Erro ao sincronizar com servidor:', err);
@@ -512,6 +564,7 @@ export async function syncCatalogWithServer(currentCatalog?: CatalogProduct[]): 
     catalog: fallback,
     count: fallback.length,
     message: `Sincronizado localmente com ${fallback.length} produtos.`,
+    source: 'local',
   };
 }
 

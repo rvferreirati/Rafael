@@ -17,7 +17,8 @@ import {
   ArrowRight,
   Layers,
   Filter,
-  RefreshCw
+  RefreshCw,
+  Download
 } from 'lucide-react';
 import {
   CatalogProduct,
@@ -56,10 +57,19 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
 
   const handleManualSync = async () => {
     setIsSyncing(true);
-    const result = await syncCatalogWithServer(catalog);
+    const result = await syncCatalogWithServer(catalog, 'merge');
     onUpdateCatalog(result.catalog);
     setIsSyncing(false);
     setFeedback(result.message);
+    setTimeout(() => setFeedback(null), 3500);
+  };
+
+  const handlePullFromCloud = async () => {
+    setIsSyncing(true);
+    const result = await syncCatalogWithServer(catalog, 'pull');
+    onUpdateCatalog(result.catalog);
+    setIsSyncing(false);
+    setFeedback(`Baixado da nuvem! ${result.count} produtos carregados no computador.`);
     setTimeout(() => setFeedback(null), 3500);
   };
 
@@ -347,10 +357,21 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
                 onClick={handleManualSync}
                 disabled={isSyncing}
                 className="px-3.5 py-2 text-xs font-bold bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-60"
-                title="Sincronizar Banco de Dados com todos os dispositivos (PC e Celular)"
+                title="Sincronizar e mesclar produtos entre todos os dispositivos (PC e Celular)"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
                 <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar com Todos'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePullFromCloud}
+                disabled={isSyncing}
+                className="px-3 py-2 text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-60"
+                title="Substituir os produtos deste computador pela lista mais recente salva na nuvem/celular"
+              >
+                <Download className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Baixar da Nuvem</span>
               </button>
 
               <button
