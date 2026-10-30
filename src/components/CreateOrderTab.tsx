@@ -139,32 +139,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState<boolean>(false);
 
   // Line items (extracted from prints and fully editable)
-  const [items, setItems] = useState<LineItem[]>([
-    {
-      id: 'item-1',
-      code: '#47',
-      description: 'Bloco Polidor',
-      quantity: 1,
-      unitPrice: 3.0,
-      total: 3.0,
-    },
-    {
-      id: 'item-2',
-      code: '#46',
-      description: 'Lixa mini canário pura arte com...',
-      quantity: 1,
-      unitPrice: 7.7,
-      total: 7.7,
-    },
-    {
-      id: 'item-3',
-      code: '#10',
-      description: 'Lixa moeda preta podóloga grão...',
-      quantity: 1,
-      unitPrice: 6.93,
-      total: 6.93,
-    },
-  ]);
+  const [items, setItems] = useState<LineItem[]>([]);
 
   // Financials & Notes
   const [discountRate, setDiscountRate] = useState<number>(0);
@@ -454,11 +429,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     setRawOcrText('');
     setFeedbackSuccess(null);
     setActiveStep('upload');
-    setItems([
-      { id: 'item-1', code: '#47', description: 'Bloco Polidor', quantity: 1, unitPrice: 3.0, total: 3.0 },
-      { id: 'item-2', code: '#46', description: 'Lixa mini canário pura arte com...', quantity: 1, unitPrice: 7.7, total: 7.7 },
-      { id: 'item-3', code: '#10', description: 'Lixa moeda preta podóloga grão...', quantity: 1, unitPrice: 6.93, total: 6.93 },
-    ]);
+    setItems([]);
   };
 
   // Convert File/Blob to Base64
@@ -662,7 +633,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
 
     // 3. Update items in table
     // Each print has already had its items reconciled against the database individually.
-    // We preserve all items across multiple prints, allowing the same item to appear from different prints!
+    // When accumulatePrints is true, we preserve all items across multiple prints, allowing identical products from different prints to both appear!
     if (allExtractedItems.length > 0) {
       if (accumulatePrints && uploadedPrints.length > 0) {
         setItems((prev) => [...prev, ...allExtractedItems]);

@@ -23,6 +23,8 @@ import {
   DEFAULT_CATALOG,
   parseCatalogText,
   saveStoredCatalog,
+  pushServerCatalog,
+  resetServerCatalog,
   upsertCatalogProduct,
   mergeCatalogProducts
 } from '../utils/productCatalog';
@@ -49,8 +51,8 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
   const [previewItems, setPreviewItems] = useState<CatalogProduct[] | null>(null);
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
 
-  // Inline editing for existing items
-  const [editingCode, setEditingCode] = useState<string | null>(null);
+  // Inline editing for existing items (using unique identifier)
+  const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editItemCode, setEditItemCode] = useState('');
   const [editItemName, setEditItemName] = useState('');
   const [editItemPrice, setEditItemPrice] = useState('');
@@ -61,6 +63,10 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
   const [newPrice, setNewPrice] = useState('');
 
   if (!isOpen) return null;
+
+  const getItemKey = (item: CatalogProduct, index: number) => {
+    return item.id || `${item.code}_${item.name}_${index}`;
+  };
 
   const filtered = catalog.filter(
     (p) =>
@@ -77,7 +83,7 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
     : null;
 
   // Add or update item from manual form
-  const handleAddNewOrUpdate = (e: React.FormEvent) => {
+  const handleAddNewOrUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim()) return;
 
@@ -85,14 +91,17 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
     const rawCode = newCode.trim().replace(/^#/, '');
     const codeVal = rawCode === '' || rawCode === '-' ? '-' : rawCode;
 
-    const updated = upsertCatalogProduct(catalog, {
+    const newItem: CatalogProduct = {
+      id: `cat-${codeVal === '-' ? Date.now() : codeVal}-${Math.random().toString(36).substr(2, 4)}`,
       code: codeVal,
       name: newName.trim(),
       price: priceNum,
-    });
+    };
+
+    const updated = upsertCatalogProduct(catalog, newItem);
 
     onUpdateCatalog(updated);
-    saveStoredCatalog(updated);
+    await pushServerCatalog(updated);
 
     const wasUpdate = !!existingProductWithCode;
     setNewCode('');
@@ -100,57 +109,77 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
     setNewPrice('');
     setFeedback(
       wasUpdate
-        ? `Produto #${codeVal} atualizado com novo valor (R$ ${priceNum.toFixed(2).replace('.', ',')})!`
+        ? `Produto #${codeVal} atualizado (R$ ${priceNum.toFixed(2).replace('.', ',')}) e sincronizado com o celular!`
         : codeVal === '-'
-        ? `Produto "${newName.trim()}" adicionado sem código (-) com sucesso!`
-        : `Produto #${codeVal} adicionado com sucesso!`
+        ? `Produto "${newName.trim()}" adicionado sem código (-) e sincronizado!`
+        : `Produto #${codeVal} adicionado e sincronizado com o celular!`
     );
     setTimeout(() => setFeedback(null), 3500);
   };
 
   // Start inline editing of an item
-  const handleStartEdit = (item: CatalogProduct) => {
-    setEditingCode(item.code);
+  const handleStartEdit = (item: CatalogProduct, index: number) => {
+    const key = getItemKey(item, index);
+    setEditingKey(key);
     setEditItemCode(item.code);
     setEditItemName(item.name);
     setEditItemPrice(item.price.toFixed(2).replace('.', ','));
   };
 
-  const handleSaveEdit = (originalCode: string) => {
+  const handleSaveEdit = async (originalItem: CatalogProduct, originalIndex: number) => {
     const priceNum = parseFloat(editItemPrice.replace(',', '.')) || 0;
     const rawCode = editItemCode.trim().replace(/^#/, '');
     const cleanCode = rawCode === '' || rawCode === '-' ? '-' : rawCode;
 
-    // Filter out original code, then upsert
-    const withoutOriginal = catalog.filter((p) => p.code !== originalCode);
-    const updated = upsertCatalogProduct(withoutOriginal, {
+    const originalKey = getItemKey(originalItem, originalIndex);
+    const withoutOriginal = catalog.filter((p, i) => getItemKey(p, i) !== originalKey);
+
+    const updatedItem: CatalogProduct = {
+      id: originalItem.id || `cat-${Date.now()}`,
       code: cleanCode,
       name: editItemName.trim() || 'Item sem nome',
       price: priceNum,
-    });
+    };
+
+    const updated = upsertCatalogProduct(withoutOriginal, updatedItem);
 
     onUpdateCatalog(updated);
-    saveStoredCatalog(updated);
-    setEditingCode(null);
+    await pushServerCatalog(updated);
+    setEditingKey(null);
     setFeedback(
       cleanCode === '-'
-        ? `Produto atualizado sem código (-) com sucesso!`
-        : `Produto #${cleanCode} atualizado com sucesso!`
+        ? `Produto atualizado sem código (-) e sincronizado com o celular!`
+        : `Produto #${cleanCode} atualizado e sincronizado com o celular!`
     );
     setTimeout(() => setFeedback(null), 3000);
   };
 
-  const handleRemove = (code: string) => {
-    const updated = catalog.filter((p) => p.code !== code);
+  // Delete an individual item safely without affecting others
+  const handleRemove = async (item: CatalogProduct, index: number) => {
+    const targetKey = getItemKey(item, index);
+    const updated = catalog.filter((p, i) => getItemKey(p, i) !== targetKey);
     onUpdateCatalog(updated);
-    saveStoredCatalog(updated);
+    await pushServerCatalog(updated);
+    setFeedback(`Produto "${item.name}" excluído do banco de dados e sincronizado!`);
+    setTimeout(() => setFeedback(null), 2500);
   };
 
-  const handleResetDefault = () => {
-    if (confirm('Restaurar o banco de dados original (12 produtos da sua lista)?')) {
-      onUpdateCatalog(DEFAULT_CATALOG);
-      saveStoredCatalog(DEFAULT_CATALOG);
-      setFeedback('Banco de dados restaurado com os 12 produtos padrão!');
+  // Delete ALL items completely
+  const handleClearAll = async () => {
+    if (confirm(`Atenção: Deseja realmente apagar TODOS os ${catalog.length} produtos do Banco de Dados?`)) {
+      onUpdateCatalog([]);
+      await pushServerCatalog([]);
+      setFeedback('Todos os produtos foram apagados do banco de dados!');
+      setTimeout(() => setFeedback(null), 3000);
+    }
+  };
+
+  // Reset to the default catalog
+  const handleResetDefault = async () => {
+    if (confirm('Restaurar o banco de dados oficial (16 produtos padrão)?')) {
+      const restored = await resetServerCatalog();
+      onUpdateCatalog(restored);
+      setFeedback('Banco de dados restaurado com os 16 produtos padrão e sincronizado!');
       setTimeout(() => setFeedback(null), 3000);
     }
   };
@@ -212,12 +241,14 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
     }
 
     onUpdateCatalog(finalCatalog);
-    saveStoredCatalog(finalCatalog);
+    pushServerCatalog(finalCatalog);
 
     const count = previewItems.length;
     setIsImporting(false);
     setPreviewItems(null);
     setImportText('');
+    setFeedback(`Importação concluída! ${count} produtos salvos e sincronizados com o celular.`);
+    setTimeout(() => setFeedback(null), 3500);
     setFeedback(
       importMode === 'replace'
         ? `Banco de dados substituído por ${count} itens da pré-lista!`
@@ -319,10 +350,20 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
                 type="button"
                 onClick={handleResetDefault}
                 className="px-3 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200"
-                title="Restaura os 12 produtos oficiais da lista enviada"
+                title="Restaura os 16 produtos oficiais da lista enviada"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                Restaurar 12 Itens
+                Restaurar 16 Itens
+              </button>
+
+              <button
+                type="button"
+                onClick={handleClearAll}
+                className="px-3 py-2 text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer border border-rose-200"
+                title="Apaga todos os produtos do banco de dados de uma vez só"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Limpar Banco
               </button>
             </div>
           </div>
@@ -603,15 +644,16 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
                   {filtered.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="py-8 text-center text-slate-400">
-                        Nenhum produto encontrado na pesquisa.
+                        Nenhum produto cadastrado no banco de dados. Adicione novos produtos abaixo ou clique em "Restaurar 16 Itens".
                       </td>
                     </tr>
                   ) : (
-                    filtered.map((item) => {
-                      const isEditingThis = editingCode === item.code;
+                    filtered.map((item, index) => {
+                      const itemKey = getItemKey(item, index);
+                      const isEditingThis = editingKey === itemKey;
                       return (
                         <tr
-                          key={item.code}
+                          key={itemKey}
                           className={`hover:bg-slate-50/80 transition-colors ${
                             isEditingThis ? 'bg-amber-50/60' : ''
                           }`}
@@ -674,16 +716,16 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
                               <div className="flex items-center justify-center gap-1.5">
                                 <button
                                   type="button"
-                                  onClick={() => handleSaveEdit(item.code)}
-                                  className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
+                                  onClick={() => handleSaveEdit(item, index)}
+                                  className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors cursor-pointer"
                                   title="Salvar alterações"
                                 >
                                   <Check className="w-3.5 h-3.5" />
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => setEditingCode(null)}
-                                  className="p-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg transition-colors"
+                                  onClick={() => setEditingKey(null)}
+                                  className="p-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg transition-colors cursor-pointer"
                                   title="Cancelar edição"
                                 >
                                   <X className="w-3.5 h-3.5" />
@@ -693,7 +735,7 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
                               <div className="flex items-center justify-center gap-1">
                                 <button
                                   type="button"
-                                  onClick={() => handleStartEdit(item)}
+                                  onClick={() => handleStartEdit(item, index)}
                                   className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
                                   title="Editar valor ou descrição"
                                 >
@@ -701,9 +743,9 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleRemove(item.code)}
+                                  onClick={() => handleRemove(item, index)}
                                   className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                                  title="Remover produto"
+                                  title="Remover produto individualmente"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>

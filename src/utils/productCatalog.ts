@@ -1,4 +1,5 @@
 export interface CatalogProduct {
+  id?: string;
   code: string;
   name: string;
   price: number;
@@ -8,33 +9,34 @@ export const STORAGE_KEY_CATALOG = 'artex7_product_catalog_v1';
 
 // Seeded with the user's official database from fdg_48c9d622.txt
 export const DEFAULT_CATALOG: CatalogProduct[] = [
-  { code: '47', name: 'Bloco Polidor', price: 3.0 },
-  { code: '46', name: 'Lixa mini canário pura arte com...', price: 7.7 },
-  { code: '10', name: 'Lixa moeda preta podóloga grão...', price: 6.93 },
-  { code: '12', name: 'Algodão prensado com 1000 unidades', price: 13.0 },
-  { code: '14', name: 'Algodão bola 95 g', price: 5.0 },
-  { code: '23', name: 'Rolo de Algodão 500 g', price: 20.0 },
-  { code: '22', name: 'Protetor de bacia plástica Manic...', price: 5.2 },
-  { code: '56', name: 'Protetor de bacia pedicure com 50 unidades', price: 11.5 },
-  { code: '66', name: 'Touca plástica descartável com...', price: 8.51 },
-  { code: '17', name: 'Cílios Mix 8 a 14', price: 30.0 },
-  { code: '90', name: 'Cílios Magina D-lash Naturals Knot-free flares 10 mm', price: 12.0 },
-  { code: '34', name: 'Cílios Postiços 7P-C 14mm', price: 11.0 },
-  { code: '-', name: 'Secante rápido não oleoso com11 ml', price: 6.9 },
-  { code: '-', name: 'Colorama Boneca', price: 5.9 },
-  { code: '-', name: 'Bastão Inox c/ silicone ,Isis', price: 7.07 },
-  { code: '-', name: 'Palito para depilação com 100 unidades', price: 7.5 },
+  { id: 'cat-47', code: '47', name: 'Bloco Polidor', price: 3.0 },
+  { id: 'cat-46', code: '46', name: 'Lixa mini canário pura arte com...', price: 7.7 },
+  { id: 'cat-10', code: '10', name: 'Lixa moeda preta podóloga grão...', price: 6.93 },
+  { id: 'cat-12', code: '12', name: 'Algodão prensado com 1000 unidades', price: 13.0 },
+  { id: 'cat-14', code: '14', name: 'Algodão bola 95 g', price: 5.0 },
+  { id: 'cat-23', code: '23', name: 'Rolo de Algodão 500 g', price: 20.0 },
+  { id: 'cat-22', code: '22', name: 'Protetor de bacia plástica Manic...', price: 5.2 },
+  { id: 'cat-56', code: '56', name: 'Protetor de bacia pedicure com 50 unidades', price: 11.5 },
+  { id: 'cat-66', code: '66', name: 'Touca plástica descartável com...', price: 8.51 },
+  { id: 'cat-17', code: '17', name: 'Cílios Mix 8 a 14', price: 30.0 },
+  { id: 'cat-90', code: '90', name: 'Cílios Magina D-lash Naturals Knot-free flares 10 mm', price: 12.0 },
+  { id: 'cat-34', code: '34', name: 'Cílios Postiços 7P-C 14mm', price: 11.0 },
+  { id: 'cat-secante', code: '-', name: 'Secante rápido não oleoso com11 ml', price: 6.9 },
+  { id: 'cat-boneca', code: '-', name: 'Colorama Boneca', price: 5.9 },
+  { id: 'cat-bastao', code: '-', name: 'Bastão Inox c/ silicone ,Isis', price: 7.07 },
+  { id: 'cat-palito', code: '-', name: 'Palito para depilação com 100 unidades', price: 7.5 },
 ];
 
 export function loadStoredCatalog(): CatalogProduct[] {
   if (typeof window === 'undefined') return DEFAULT_CATALOG;
   try {
     const raw = localStorage.getItem(STORAGE_KEY_CATALOG);
-    if (raw) {
+    if (raw !== null) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        // Merge with DEFAULT_CATALOG so any new base products are immediately available
-        return mergeCatalogProducts(DEFAULT_CATALOG, parsed);
+      if (Array.isArray(parsed)) {
+        // Return stored items directly without re-merging DEFAULT_CATALOG!
+        // This guarantees deleted items STAY deleted and allows clearing the catalog.
+        return parsed;
       }
     }
   } catch (err) {
@@ -50,6 +52,63 @@ export function saveStoredCatalog(catalog: CatalogProduct[]): void {
   } catch (err) {
     console.warn('Erro ao salvar catálogo no localStorage:', err);
   }
+}
+
+/**
+ * Fetches the synchronized catalog from the server (shared across PC & Mobile)
+ */
+export async function fetchServerCatalog(): Promise<CatalogProduct[] | null> {
+  try {
+    const res = await fetch('/api/catalog');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.catalog)) {
+        saveStoredCatalog(data.catalog);
+        return data.catalog;
+      }
+    }
+  } catch (err) {
+    console.warn('Não foi possível sincronizar catálogo com o servidor:', err);
+  }
+  return null;
+}
+
+/**
+ * Pushes the catalog to the server for instant synchronization with mobile phones
+ */
+export async function pushServerCatalog(catalog: CatalogProduct[]): Promise<boolean> {
+  saveStoredCatalog(catalog);
+  try {
+    const res = await fetch('/api/catalog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ catalog }),
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('Erro ao salvar catálogo no servidor:', err);
+    return false;
+  }
+}
+
+/**
+ * Resets the catalog on the server and locally to the default products
+ */
+export async function resetServerCatalog(): Promise<CatalogProduct[]> {
+  try {
+    const res = await fetch('/api/catalog/reset', { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.catalog)) {
+        saveStoredCatalog(data.catalog);
+        return data.catalog;
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao restaurar catálogo no servidor:', err);
+  }
+  saveStoredCatalog(DEFAULT_CATALOG);
+  return DEFAULT_CATALOG;
 }
 
 /**
@@ -296,16 +355,24 @@ export function matchItemWithCatalog(
     if (cleanNorm === prodClean) {
       score += 100;
       reasons.push('Nome idêntico');
-    } else if (cleanNorm.startsWith(prodClean) || prodClean.startsWith(cleanNorm)) {
-      if (cleanNorm.length >= 4) {
-        score += 70;
-        reasons.push('Início compatível');
+    } else if (cleanNorm.startsWith(prodClean)) {
+      score += 85;
+      reasons.push('Início compatível');
+    } else if (prodClean.startsWith(cleanNorm) && cleanNorm.length >= Math.min(prodClean.length * 0.75, 10)) {
+      score += 65;
+      reasons.push('Início de nome compatível');
+    }
+
+    // Specific check for Bloco Polidor: requires either code #47 or the specific word 'polidor'
+    if (prod.code === '47' || prodNorm.includes('bloco polidor')) {
+      if (!detectedCodeNum && !cleanNorm.includes('polidor')) {
+        score -= 60; // Never match Bloco Polidor without code #47 or the word 'polidor'
       }
     }
 
-    // 3. Word / Token Matching (+20 per matching key word)
-    const prodTokens = prodClean.split(' ').filter((t) => t.length >= 3);
-    const textTokens = cleanNorm.split(' ').filter((t) => t.length >= 3);
+    // 3. Word / Token Matching (+25 per matching key word)
+    const prodTokens = prodClean.split(' ').filter((t) => t.length >= 2);
+    const textTokens = cleanNorm.split(' ').filter((t) => t.length >= 2);
 
     let matchedWordCount = 0;
     for (const token of textTokens) {
@@ -319,7 +386,42 @@ export function matchItemWithCatalog(
       reasons.push(`${matchedWordCount} palavras coincidentes`);
     }
 
-    // 4. Specific differentiator checks for similar products:
+    // 4. Specific Cotton ("algodão") detection and classification
+    const isTextCotton = cleanNorm.includes('algoda') || cleanNorm.includes('cotton');
+    const isProdCotton = prodClean.includes('algoda');
+
+    if (isTextCotton && isProdCotton) {
+      score += 45;
+      reasons.push('Produto de algodão');
+
+      // Check if prensado / 1000 unidades
+      const isTextPrensado = cleanNorm.includes('prensa') || cleanNorm.includes('1000') || cleanNorm.includes('unid');
+      const isProdPrensado = prodClean.includes('prensa') || prodClean.includes('1000');
+      if (isTextPrensado && isProdPrensado) {
+        score += 65;
+        reasons.push('Algodão prensado 1000un');
+      }
+
+      // Check if bola / 95 g
+      const isTextBola = cleanNorm.includes('bola') || cleanNorm.includes('95');
+      const isProdBola = prodClean.includes('bola') || prodClean.includes('95');
+      if (isTextBola && isProdBola) {
+        score += 65;
+        reasons.push('Algodão bola 95g');
+      }
+
+      // Check if rolo / 500 g
+      const isTextRolo = cleanNorm.includes('rolo') || cleanNorm.includes('500');
+      const isProdRolo = prodClean.includes('rolo') || prodClean.includes('500');
+      if (isTextRolo && isProdRolo) {
+        score += 65;
+        reasons.push('Rolo de algodão 500g');
+      }
+    } else if (isTextCotton && !isProdCotton) {
+      score -= 50;
+    }
+
+    // 5. Specific differentiator checks for similar products:
     // e.g. "pedicure" vs "manicure" or "plastica"
     if (cleanNorm.includes('pedi') && prodClean.includes('pedi')) {
       score += 40;
@@ -335,7 +437,7 @@ export function matchItemWithCatalog(
       score -= 50;
     }
 
-    // 5. Price verification (+45 points if price matches table)
+    // 6. Price verification (+45 points if price matches table)
     if (detectedPrice && detectedPrice > 0) {
       const priceDiff = Math.abs(prod.price - detectedPrice);
       if (priceDiff < 0.08) {

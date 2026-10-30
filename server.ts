@@ -3,6 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { matchItemWithCatalog, normalizeForComparison } from './src/utils/productCatalog';
 
 dotenv.config();
@@ -23,6 +24,84 @@ const ai = new GoogleGenAI({
   },
 });
 
+// Centralized Catalog file for real-time synchronization across PC & Mobile
+const CATALOG_FILE_PATH = path.join(path.resolve(), 'data', 'catalog.json');
+
+const INITIAL_CATALOG = [
+  { id: 'cat-47', code: '47', name: 'Bloco Polidor', price: 3.0 },
+  { id: 'cat-46', code: '46', name: 'Lixa mini canário pura arte com...', price: 7.7 },
+  { id: 'cat-10', code: '10', name: 'Lixa moeda preta podóloga grão...', price: 6.93 },
+  { id: 'cat-12', code: '12', name: 'Algodão prensado com 1000 unidades', price: 13.0 },
+  { id: 'cat-14', code: '14', name: 'Algodão bola 95 g', price: 5.0 },
+  { id: 'cat-23', code: '23', name: 'Rolo de Algodão 500 g', price: 20.0 },
+  { id: 'cat-22', code: '22', name: 'Protetor de bacia plástica Manic...', price: 5.2 },
+  { id: 'cat-56', code: '56', name: 'Protetor de bacia pedicure com 50 unidades', price: 11.5 },
+  { id: 'cat-66', code: '66', name: 'Touca plástica descartável com...', price: 8.51 },
+  { id: 'cat-17', code: '17', name: 'Cílios Mix 8 a 14', price: 30.0 },
+  { id: 'cat-90', code: '90', name: 'Cílios Magina D-lash Naturals Knot-free flares 10 mm', price: 12.0 },
+  { id: 'cat-34', code: '34', name: 'Cílios Postiços 7P-C 14mm', price: 11.0 },
+  { id: 'cat-secante', code: '-', name: 'Secante rápido não oleoso com11 ml', price: 6.9 },
+  { id: 'cat-boneca', code: '-', name: 'Colorama Boneca', price: 5.9 },
+  { id: 'cat-bastao', code: '-', name: 'Bastão Inox c/ silicone ,Isis', price: 7.07 },
+  { id: 'cat-palito', code: '-', name: 'Palito para depilação com 100 unidades', price: 7.5 },
+];
+
+function readServerCatalog(): any[] {
+  try {
+    if (fs.existsSync(CATALOG_FILE_PATH)) {
+      const data = fs.readFileSync(CATALOG_FILE_PATH, 'utf-8');
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao ler data/catalog.json:', err);
+  }
+  return INITIAL_CATALOG;
+}
+
+function writeServerCatalog(catalog: any[]): boolean {
+  try {
+    fs.mkdirSync(path.dirname(CATALOG_FILE_PATH), { recursive: true });
+    fs.writeFileSync(CATALOG_FILE_PATH, JSON.stringify(catalog, null, 2), 'utf-8');
+    return true;
+  } catch (err) {
+    console.error('Erro ao escrever data/catalog.json:', err);
+    return false;
+  }
+}
+
+// API Route: Get shared catalog (synced across PC & Mobile)
+app.get('/api/catalog', (req, res) => {
+  const catalog = readServerCatalog();
+  return res.json({ catalog });
+});
+
+// API Route: Update shared catalog (synced across PC & Mobile)
+app.post('/api/catalog', (req, res) => {
+  const { catalog } = req.body;
+  if (!Array.isArray(catalog)) {
+    return res.status(400).json({ error: 'O catálogo deve ser uma lista (array).' });
+  }
+  const ok = writeServerCatalog(catalog);
+  if (ok) {
+    return res.json({ success: true, count: catalog.length, catalog });
+  } else {
+    return res.status(500).json({ error: 'Falha ao salvar catálogo no servidor.' });
+  }
+});
+
+// API Route: Reset shared catalog to initial defaults
+app.post('/api/catalog/reset', (req, res) => {
+  const ok = writeServerCatalog(INITIAL_CATALOG);
+  if (ok) {
+    return res.json({ success: true, catalog: INITIAL_CATALOG });
+  } else {
+    return res.status(500).json({ error: 'Falha ao restaurar catálogo.' });
+  }
+});
+
 // API Route: AI OCR for invoices, quotes, receipts, and order screenshots
 app.post('/api/ocr', async (req, res) => {
   try {
@@ -31,25 +110,8 @@ app.post('/api/ocr', async (req, res) => {
       return res.status(400).json({ error: 'Nenhuma imagem fornecida' });
     }
 
-    const defaultDb = [
-      { code: '47', name: 'Bloco Polidor', price: 3.0 },
-      { code: '46', name: 'Lixa mini canário pura arte com...', price: 7.7 },
-      { code: '10', name: 'Lixa moeda preta podóloga grão...', price: 6.93 },
-      { code: '12', name: 'Algodão prensado com 1000 unidades', price: 13.0 },
-      { code: '14', name: 'Algodão bola 95 g', price: 5.0 },
-      { code: '23', name: 'Rolo de Algodão 500 g', price: 20.0 },
-      { code: '22', name: 'Protetor de bacia plástica Manic...', price: 5.2 },
-      { code: '56', name: 'Protetor de bacia pedicure com 50 unidades', price: 11.5 },
-      { code: '66', name: 'Touca plástica descartável com...', price: 8.51 },
-      { code: '17', name: 'Cílios Mix 8 a 14', price: 30.0 },
-      { code: '90', name: 'Cílios Magina D-lash Naturals Knot-free flares 10 mm', price: 12.0 },
-      { code: '34', name: 'Cílios Postiços 7P-C 14mm', price: 11.0 },
-      { code: '-', name: 'Secante rápido não oleoso com11 ml', price: 6.9 },
-      { code: '-', name: 'Colorama Boneca', price: 5.9 },
-      { code: '-', name: 'Bastão Inox c/ silicone ,Isis', price: 7.07 },
-      { code: '-', name: 'Palito para depilação com 100 unidades', price: 7.5 },
-    ];
-    const activeCatalog = Array.isArray(customCatalog) && customCatalog.length > 0 ? customCatalog : defaultDb;
+    const serverDb = readServerCatalog();
+    const activeCatalog = Array.isArray(customCatalog) && customCatalog.length > 0 ? customCatalog : serverDb;
     const catalogSummary = activeCatalog
       .map((p: any) => `- Código #${p.code}: "${p.name}" (Preço tabela: R$ ${Number(p.price).toFixed(2)})`)
       .join('\n');
@@ -97,9 +159,10 @@ SUA MISSÃO:
 - Use o BANCO DE DADOS acima para associar o código oficial (#47, #12, #56 ou '-') e o nome correto.
 
 REGRA DE VALIDAÇÃO:
+- NUNCA invente nem presuma produtos. Extraia APENAS E EXCLUSIVAMENTE os produtos com texto e imagem claramente VISÍVEIS na tela da imagem enviada.
+- Se um produto do banco de dados NÃO estiver visível neste print específico, NUNCA o inclua no resultado!
 - NUNCA crie produtos a partir de valores de preço soltos isolados (como "R$ 520").
 - NUNCA crie produtos a partir de botões ou links de categorias (como "Mostrar tudo", "Ver tudo", "Ver carrinho", "Continuar comprando").
-- Cada item deve ser um produto real (ex: Bloco Polidor, Algodão prensado, Secante rápido, Colorama Boneca, Protetor de bacia, Cílios, Bastão Inox, Palito para depilação).
 
 ATENÇÃO MÁXIMA AO SUBTOTAL / TOTAL DO CARRINHO:
 - Se houver um valor de subtotal no rodapé da tela, NUNCA o atribua como preço de um item individual.

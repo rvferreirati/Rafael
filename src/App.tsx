@@ -8,7 +8,7 @@ import { QuickStartModal } from './components/QuickStartModal';
 import { CatalogModal } from './components/CatalogModal';
 import { LoginScreen } from './components/LoginScreen';
 import { Customer, SalesOrder, CompanyProfile } from './types';
-import { CatalogProduct, loadStoredCatalog } from './utils/productCatalog';
+import { CatalogProduct, loadStoredCatalog, fetchServerCatalog, pushServerCatalog } from './utils/productCatalog';
 import { HelpCircle, Sparkles } from 'lucide-react';
 
 const STORAGE_KEYS = {
@@ -105,6 +105,30 @@ export default function App() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [catalog, setCatalog] = useState<CatalogProduct[]>(loadStoredCatalog);
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+
+  // Synchronize catalog with server (cross-device sync for PC and Mobile phone)
+  useEffect(() => {
+    fetchServerCatalog().then((serverCat) => {
+      if (serverCat) {
+        setCatalog(serverCat);
+      }
+    });
+
+    const handleFocus = () => {
+      fetchServerCatalog().then((serverCat) => {
+        if (serverCat) {
+          setCatalog(serverCat);
+        }
+      });
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
+  const handleUpdateCatalog = (newCatalog: CatalogProduct[]) => {
+    setCatalog(newCatalog);
+    pushServerCatalog(newCatalog);
+  };
 
   // Persistence
   const [customers, setCustomers] = useState<Customer[]>(() => {
@@ -242,7 +266,7 @@ export default function App() {
             onSaveOrder={handleSaveOrder}
             onNavigateToCustomers={() => setActiveTab('customers')}
             catalog={catalog}
-            onUpdateCatalog={setCatalog}
+            onUpdateCatalog={handleUpdateCatalog}
           />
         )}
 
@@ -312,7 +336,7 @@ export default function App() {
         isOpen={isCatalogOpen}
         onClose={() => setIsCatalogOpen(false)}
         catalog={catalog}
-        onUpdateCatalog={setCatalog}
+        onUpdateCatalog={handleUpdateCatalog}
       />
     </div>
   );
