@@ -198,10 +198,10 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
 
   // Reset to the default catalog
   const handleResetDefault = async () => {
-    if (confirm('Restaurar o banco de dados oficial (16 produtos padrão)?')) {
+    if (confirm('Restaurar o banco de dados oficial completo (63 produtos)?')) {
       const restored = await resetServerCatalog();
       onUpdateCatalog(restored);
-      setFeedback('Banco de dados restaurado com os 16 produtos padrão e sincronizado!');
+      setFeedback('Banco de dados restaurado com os 63 produtos completos e sincronizado!');
       setTimeout(() => setFeedback(null), 3000);
     }
   };
@@ -394,10 +394,10 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
                 type="button"
                 onClick={handleResetDefault}
                 className="px-3 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200"
-                title="Restaura os 16 produtos oficiais da lista enviada"
+                title="Restaura os 63 produtos completos do banco de dados oficial"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                Restaurar 16 Itens
+                Restaurar 63 Itens
               </button>
 
               <button
@@ -688,7 +688,7 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
                   {filtered.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="py-8 text-center text-slate-400">
-                        Nenhum produto cadastrado no banco de dados. Adicione novos produtos abaixo ou clique em "Restaurar 16 Itens".
+                        Nenhum produto cadastrado no banco de dados. Adicione novos produtos abaixo ou clique em "Restaurar 63 Itens".
                       </td>
                     </tr>
                   ) : (

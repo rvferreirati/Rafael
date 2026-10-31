@@ -51,6 +51,7 @@ import {
   saveStoredCatalog,
   pushServerCatalog,
   syncCatalogWithServer,
+  mergeCatalogProducts,
   reconcileItemsWithCatalog
 } from '../utils/productCatalog';
 import { CatalogModal } from './CatalogModal';
@@ -134,7 +135,11 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
 
   // Product Database / Catalog State (kept in sync with prop and localStorage)
   const [catalog, setCatalog] = useState<CatalogProduct[]>(() => {
-    return propCatalog && propCatalog.length > 0 ? propCatalog : loadStoredCatalog();
+    const initial = propCatalog && propCatalog.length > 0 ? propCatalog : loadStoredCatalog();
+    if (initial.length < DEFAULT_CATALOG.length) {
+      return mergeCatalogProducts(DEFAULT_CATALOG, initial);
+    }
+    return initial;
   });
 
   useEffect(() => {

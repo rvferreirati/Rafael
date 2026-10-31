@@ -5,7 +5,8 @@ export interface CatalogProduct {
   price: number;
 }
 
-export const STORAGE_KEY_CATALOG = 'artex7_product_catalog_v1';
+export const STORAGE_KEY_CATALOG = 'artex7_product_catalog_v2';
+export const LEGACY_STORAGE_KEY_CATALOG = 'artex7_product_catalog_v1';
 
 // Seeded with the user's official database from fdg_48c9d622.txt
 export const DEFAULT_CATALOG: CatalogProduct[] = [
@@ -385,12 +386,36 @@ export const DEFAULT_CATALOG: CatalogProduct[] = [
 export function loadStoredCatalog(): CatalogProduct[] {
   if (typeof window === 'undefined') return DEFAULT_CATALOG;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_CATALOG);
+    // 1. Check current v2 storage key
+    let raw = localStorage.getItem(STORAGE_KEY_CATALOG);
+
+    // 2. If no v2 key, check legacy v1 key and auto-migrate
+    if (!raw) {
+      const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY_CATALOG);
+      if (legacyRaw) {
+        try {
+          const legacyItems = JSON.parse(legacyRaw);
+          if (Array.isArray(legacyItems)) {
+            // Auto-merge legacy items with DEFAULT_CATALOG (63 products)
+            const upgraded = mergeCatalogProducts(DEFAULT_CATALOG, legacyItems);
+            saveStoredCatalog(upgraded);
+            localStorage.removeItem(LEGACY_STORAGE_KEY_CATALOG);
+            return upgraded;
+          }
+        } catch {}
+      }
+    }
+
     if (raw !== null) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        // Return stored items directly without re-merging DEFAULT_CATALOG!
-        // This guarantees deleted items STAY deleted and allows clearing the catalog.
+        // If the stored catalog has fewer than 63 items (e.g. old 16-item cache on PC),
+        // automatically merge with DEFAULT_CATALOG so the PC instantly has all 63 items!
+        if (parsed.length < DEFAULT_CATALOG.length) {
+          const merged = mergeCatalogProducts(DEFAULT_CATALOG, parsed);
+          saveStoredCatalog(merged);
+          return merged;
+        }
         return parsed;
       }
     }
@@ -411,13 +436,20 @@ export function saveStoredCatalog(catalog: CatalogProduct[]): void {
 
 /**
  * Fetches the synchronized catalog from the server (shared across PC & Mobile)
+ * Uses cache: 'no-store' and timestamp query param to guarantee no stale cache.
  */
 export async function fetchServerCatalog(): Promise<CatalogProduct[] | null> {
   try {
-    const res = await fetch('/api/catalog');
+    const res = await fetch(`/api/catalog?t=${Date.now()}`, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+      },
+    });
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data.catalog)) {
+      if (Array.isArray(data.catalog) && data.catalog.length > 0) {
         saveStoredCatalog(data.catalog);
         return data.catalog;
       }
@@ -478,7 +510,13 @@ export interface ServerCatalogInfo {
  */
 export async function fetchServerCatalogInfo(): Promise<ServerCatalogInfo | null> {
   try {
-    const res = await fetch('/api/catalog');
+    const res = await fetch(`/api/catalog?t=${Date.now()}`, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+      },
+    });
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data.catalog)) {

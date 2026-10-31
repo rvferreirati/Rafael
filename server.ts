@@ -92,6 +92,10 @@ function writeServerCatalog(catalog: any[], deviceName: string = 'dispositivo'):
 
 // API Route: Get shared catalog with metadata (synced across PC & Mobile)
 app.get('/api/catalog', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
   const meta = readServerCatalogMeta();
   return res.json({
     catalog: meta.catalog,

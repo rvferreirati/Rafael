@@ -9,7 +9,16 @@ import { CatalogModal } from './components/CatalogModal';
 import { SyncModal } from './components/SyncModal';
 import { LoginScreen } from './components/LoginScreen';
 import { Customer, SalesOrder, CompanyProfile } from './types';
-import { CatalogProduct, loadStoredCatalog, fetchServerCatalog, pushServerCatalog, syncCatalogWithServer } from './utils/productCatalog';
+import {
+  CatalogProduct,
+  DEFAULT_CATALOG,
+  loadStoredCatalog,
+  saveStoredCatalog,
+  fetchServerCatalog,
+  pushServerCatalog,
+  syncCatalogWithServer,
+  mergeCatalogProducts
+} from './utils/productCatalog';
 import { HelpCircle, Sparkles } from 'lucide-react';
 
 const STORAGE_KEYS = {
@@ -115,6 +124,13 @@ export default function App() {
   };
 
   useEffect(() => {
+    // If local catalog on PC has fewer than 63 products, immediately upgrade to full 63 products
+    if (catalog.length < DEFAULT_CATALOG.length) {
+      const merged = mergeCatalogProducts(DEFAULT_CATALOG, catalog);
+      setCatalog(merged);
+      saveStoredCatalog(merged);
+    }
+
     // On load and window focus, update catalog from server
     fetchServerCatalog().then((serverCat) => {
       if (serverCat && serverCat.length > 0) {
