@@ -901,10 +901,13 @@ export function matchItemWithCatalog(
     const prodNorm = normalizeForComparison(prod.name);
     const prodClean = prodNorm.replace(/\.{2,}/g, '').trim();
 
-    // 1. Code Match (+120 points)
+    // 1. Code Match (+120 points, or -150 penalty if codes differ)
     if (detectedCodeNum && (prod.code === detectedCodeNum || prod.code === detectedCodeNum.replace(/^0+/, ''))) {
       score += 120;
       reasons.push(`Código #${prod.code}`);
+    } else if (detectedCodeNum && prod.code && prod.code !== '-' && prod.code !== detectedCodeNum) {
+      // Strong penalty: if text has code #X, do NOT match a product with code #Y!
+      score -= 150;
     }
 
     // 2. Exact or Substring Name Equality (+100 points)

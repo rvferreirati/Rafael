@@ -189,19 +189,15 @@ BANCO DE DADOS DE PRODUTOS PARA CONCILIAÇÃO:
 ${catalogSummary}
 
 SUA MISSÃO:
-- Extraia CADA PRODUTO de compra presente na imagem (descrição, quantidade e preço unitário).
-- Preste atenção: carrinhos contêm múltiplos produtos (3, 5, 8 ou mais). Extraia TODOS os produtos da lista, de cima a baixo da tela!
-- Use o BANCO DE DADOS acima para associar o código oficial (#47, #12, #56 ou '-') e o nome correto.
+- Extraia ESTRITAMENTE os produtos de compra que estão VISÍVEIS na imagem do usuário.
+- Se a imagem tiver apenas 1 produto ou 1 código específico (ex: 47, 46, 10, etc.), retorne ESTRITAMENTE ESSE ÚNICO PRODUTO.
+- NUNCA traga ou adicione outros itens do banco de dados que não apareçam no print!
+- Use o BANCO DE DADOS acima apenas para consultar o nome oficial e o preço do item que está visível.
 
-REGRA DE VALIDAÇÃO:
-- NUNCA invente nem presuma produtos. Extraia APENAS E EXCLUSIVAMENTE os produtos com texto e imagem claramente VISÍVEIS na tela da imagem enviada.
-- Se um produto do banco de dados NÃO estiver visível neste print específico, NUNCA o inclua no resultado!
-- NUNCA crie produtos a partir de valores de preço soltos isolados (como "R$ 520").
-- NUNCA crie produtos a partir de botões ou links de categorias (como "Mostrar tudo", "Ver tudo", "Ver carrinho", "Continuar comprando").
-
-ATENÇÃO MÁXIMA AO SUBTOTAL / TOTAL DO CARRINHO:
-- Se houver um valor de subtotal no rodapé da tela, NUNCA o atribua como preço de um item individual.
-- Use a quantidade exibida no print (ex: "Quantidade: 1" -> 1).
+REGRA DE VALIDAÇÃO INFLEXÍVEL:
+- NUNCA adicione produtos extras por suposição ou associação. Se um produto do catálogo não estiver visível na imagem enviada, NUNCA o inclua!
+- NUNCA invente itens a partir de números de hora, bateria, rede, rodapé ou botões.
+- NUNCA crie produtos a partir de valores de preço soltos isolados ou totais de carrinho.
 
 Retorne estritamente em JSON compatível com o schema definido.`;
 

@@ -34,7 +34,10 @@ import {
   Bookmark,
   ShoppingBag,
   Camera,
-  Database
+  Database,
+  Hash,
+  Search,
+  Barcode
 } from 'lucide-react';
 import { Customer, LineItem, SalesOrder, CompanyProfile } from '../types';
 import { parseOCRText } from '../utils/ocrParser';
@@ -238,6 +241,177 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     setActiveStep('items');
   };
 
+  // Fast Code Entry & Database Lookup States
+  const [fastCodeInput, setFastCodeInput] = useState<string>('');
+  const [fastQuantityInput, setFastQuantityInput] = useState<number>(1);
+  const [matchedCatalogProduct, setMatchedCatalogProduct] = useState<CatalogProduct | null>(null);
+  const [fastEntryFeedback, setFastEntryFeedback] = useState<string | null>(null);
+  const fastCodeInputRef = useRef<HTMLInputElement>(null);
+
+  // Batch Code Entry Modal States
+  const [isBatchCodeModalOpen, setIsBatchCodeModalOpen] = useState<boolean>(false);
+  const [batchCodeText, setBatchCodeText] = useState<string>('');
+
+  // Helper to strictly look up product in the database by code (or name if explicit word query)
+  const lookupCatalogProduct = (query: string): CatalogProduct | undefined => {
+    if (!query) return undefined;
+    const clean = query.trim().replace(/^#/, '').replace(/^COD:?\s*/i, '').replace(/^SKU:?\s*/i, '').trim().toLowerCase();
+    if (!clean || clean === '-') return undefined;
+
+    // 1. Exact match on clean code (e.g. "47", "10", "237")
+    let found = catalog.find((p) => {
+      const pCodeClean = (p.code || '').replace(/^#/, '').replace(/^COD:?\s*/i, '').replace(/^SKU:?\s*/i, '').trim().toLowerCase();
+      return pCodeClean && pCodeClean !== '-' && pCodeClean === clean;
+    });
+    if (found) return found;
+
+    // 2. Numerical comparison (e.g. "047" vs "47")
+    const numClean = parseInt(clean, 10);
+    if (!isNaN(numClean) && String(numClean) === clean.replace(/^0+/, '')) {
+      found = catalog.find((p) => {
+        const pClean = (p.code || '').replace(/^#/, '').replace(/^COD:?\s*/i, '').trim();
+        const pNum = parseInt(pClean, 10);
+        return !isNaN(pNum) && pClean !== '-' && pNum === numClean;
+      });
+      if (found) return found;
+    }
+
+    // 3. ONLY if query is NOT purely numbers/code (e.g. "acetona" or "polidor"), allow matching by product name
+    const isPureCode = /^[0-9]+$/.test(clean) || /^[A-Z0-9\-_]{1,5}$/i.test(clean);
+    if (!isPureCode && clean.length >= 4) {
+      found = catalog.find((p) => (p.name || '').toLowerCase().includes(clean));
+      if (found) return found;
+    }
+
+    return undefined;
+  };
+
+  const handleFastCodeChange = (val: string) => {
+    setFastCodeInput(val);
+    const match = lookupCatalogProduct(val);
+    setMatchedCatalogProduct(match || null);
+  };
+
+  const handleAddProductByCode = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const raw = fastCodeInput.trim();
+    if (!raw) return;
+
+    // Check if user entered multiple comma-separated codes (e.g. "47, 46, 10")
+    const tokens = raw.includes(',') ? raw.split(',').map((t) => t.trim()).filter(Boolean) : [raw];
+
+    let addedCount = 0;
+    const qty = Math.max(1, Number(fastQuantityInput) || 1);
+
+    tokens.forEach((token) => {
+      const match = lookupCatalogProduct(token);
+      if (match) {
+        handleAddItem(match.code, match.name, qty, match.price);
+        addedCount++;
+      } else {
+        handleAddItem(token, `Produto ${token}`, qty, 0);
+        addedCount++;
+      }
+    });
+
+    if (tokens.length === 1) {
+      const match = lookupCatalogProduct(tokens[0]);
+      if (match) {
+        setFastEntryFeedback(`✓ Adicionado: [${match.code}] ${match.name} (R$ ${match.price.toFixed(2).replace('.', ',')})`);
+      } else {
+        setFastEntryFeedback(`Item com código "${tokens[0]}" adicionado ao pedido.`);
+      }
+    } else {
+      setFastEntryFeedback(`✓ ${addedCount} produtos adicionados com sucesso!`);
+    }
+
+    setFastCodeInput('');
+    setFastQuantityInput(1);
+    setMatchedCatalogProduct(null);
+    setTimeout(() => setFastEntryFeedback(null), 3500);
+    fastCodeInputRef.current?.focus();
+  };
+
+  const handleApplyBatchCodes = () => {
+    if (!batchCodeText.trim()) return;
+
+    // Split lines by newline. If only 1 line with commas and no price decimals, split by comma.
+    const rawLines = batchCodeText
+      .split(/\r?\n/)
+      .flatMap((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return [];
+        // Only split by comma if line has commas AND does not contain price decimals like 3,00 or 14,40
+        if (trimmed.includes(',') && !/\d+[.,]\d{2}/.test(trimmed)) {
+          return trimmed.split(',').map((c) => c.trim()).filter(Boolean);
+        }
+        return [trimmed];
+      })
+      .filter((l) => l.length > 0);
+
+    const newItems: LineItem[] = [];
+
+    rawLines.forEach((line, idx) => {
+      let qty = 1;
+      let textWithoutQty = line;
+
+      // Detect quantity like "x 2", "x2", "* 3", "qtd 5", "(2 un)"
+      const qtyMatch = line.match(/(?:x|\*|qtd|quant|un|und|cx)\s*(\d+)/i) || line.match(/(\d+)\s*(?:x|un|und|cx)/i);
+      if (qtyMatch) {
+        const parsedQ = parseInt(qtyMatch[1], 10);
+        if (parsedQ > 0 && parsedQ < 1000) {
+          qty = parsedQ;
+          textWithoutQty = line.replace(qtyMatch[0], '').trim();
+        }
+      }
+
+      // Check code at the start of string
+      const codeMatch = textWithoutQty.match(/^#?(\d+|[A-Z0-9\-_]{2,10})\b/i);
+      const queryCode = codeMatch ? codeMatch[1] : textWithoutQty;
+
+      const match = lookupCatalogProduct(queryCode) || lookupCatalogProduct(textWithoutQty);
+
+      if (match) {
+        newItems.push({
+          id: `item-batch-${Date.now()}-${idx}`,
+          code: match.code,
+          description: match.name,
+          quantity: qty,
+          unitPrice: match.price,
+          total: qty * match.price,
+        });
+      } else {
+        let price = 0;
+        let desc = textWithoutQty;
+        const priceMatch = textWithoutQty.match(/(?:R\$|\$)?\s*(\d+[.,]\d{2})/);
+        if (priceMatch) {
+          price = parseFloat(priceMatch[1].replace(',', '.'));
+          desc = desc.replace(priceMatch[0], '').trim();
+        }
+        newItems.push({
+          id: `item-batch-${Date.now()}-${idx}`,
+          code: codeMatch ? codeMatch[0] : `SKU-${idx + 1}`,
+          description: desc || line,
+          quantity: qty,
+          unitPrice: price,
+          total: qty * price,
+        });
+      }
+    });
+
+    if (newItems.length > 0) {
+      if (accumulatePrints) {
+        setItems((prev) => [...prev, ...newItems]);
+      } else {
+        setItems(newItems);
+      }
+      setFeedbackSuccess(`✓ ${newItems.length} produto(s) adicionados consultando o Banco de Dados!`);
+      setIsBatchCodeModalOpen(false);
+      setBatchCodeText('');
+      setActiveStep('items');
+    }
+  };
+
   const [quickProducts, setQuickProducts] = useState<QuickCatalogProduct[]>(INITIAL_QUICK_PRODUCTS);
 
   const handleAddQuickProduct = (prod: QuickCatalogProduct) => {
@@ -396,6 +570,14 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
           const num = val === '' ? 0 : parseFloat(val);
           updated.unitPrice = isNaN(num) ? 0 : num;
           updated.total = updated.quantity * updated.unitPrice;
+        } else if (field === 'code') {
+          updated.code = val;
+          const match = lookupCatalogProduct(val);
+          if (match) {
+            updated.description = match.name;
+            updated.unitPrice = match.price;
+            updated.total = (updated.quantity || 1) * match.price;
+          }
         } else {
           (updated as any)[field] = val;
         }
@@ -963,6 +1145,47 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       {/* ======================================================== */}
       {activeStep === 'upload' && (
         <div className="space-y-6">
+          {/* Opção Rápida de Pedido Manual por Códigos (Sem Print) */}
+          <div className="bg-gradient-to-r from-indigo-50/90 via-sky-50/50 to-emerald-50/80 p-5 sm:p-6 rounded-2xl border-2 border-indigo-200 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="space-y-1.5">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-600 text-white text-[11px] font-bold shadow-2xs">
+                <Barcode className="w-3.5 h-3.5" />
+                <span>Novo: Pedido Manual por Códigos</span>
+              </div>
+              <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                Criar Pedido Manualmente por Códigos (Sem precisar de Print)
+              </h3>
+              <p className="text-xs text-slate-600 max-w-xl leading-relaxed">
+                Não tem foto ou print? Digite ou cole os códigos dos produtos (ex: <strong>47</strong>, <strong>46</strong>, <strong>10</strong>, <strong>12</strong>, <strong>237</strong>, <strong>319</strong>). A descrição oficial e o preço são preenchidos automaticamente consultando o <strong>Banco de Dados ({catalog.length} produtos)</strong>.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 w-full md:w-auto shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveStep('items');
+                  setTimeout(() => fastCodeInputRef.current?.focus(), 150);
+                }}
+                className="flex-1 sm:flex-none px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer"
+              >
+                <Hash className="w-4 h-4" />
+                <span>Inserir Códigos Manualmente</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBatchCodeModalOpen(true);
+                  setActiveStep('items');
+                }}
+                className="flex-1 sm:flex-none px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer"
+              >
+                <FileText className="w-4 h-4" />
+                <span>Colar Lista em Massa</span>
+              </button>
+            </div>
+          </div>
+
           {/* Drag & Drop Area (Multiple Files Supported) */}
           <div className="bg-white p-6 sm:p-7 rounded-2xl border border-slate-200 shadow-xs space-y-4">
             <div
@@ -1260,13 +1483,162 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
               </button>
               <button
                 type="button"
+                onClick={() => {
+                  fastCodeInputRef.current?.focus();
+                }}
+                className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-indigo-200"
+                title="Lançamento rápido por código de barras ou SKU"
+              >
+                <Barcode className="w-3.5 h-3.5" />
+                <span>+ Lançar por Código</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsBatchCodeModalOpen(true)}
+                className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-emerald-300 shadow-2xs"
+                title="Lançar múltiplos códigos de uma só vez"
+              >
+                <Hash className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Códigos em Massa</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => handleAddItem()}
                 className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
               >
                 <Plus className="w-4 h-4" />
-                <span>+ Adicionar Linha</span>
+                <span>+ Linha Manual</span>
+              </button>
+              {items.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm('Deseja limpar todos os itens da tabela para começar o pedido do zero?')) {
+                      setItems([]);
+                      setFeedbackSuccess('Tabela limpa. Digite o código do produto para adicionar.');
+                    }
+                  }}
+                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-rose-200"
+                  title="Limpar todos os produtos da tabela para lançar apenas os códigos que você quer"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Limpar Tabela ({items.length})</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Lançamento Rápido por Código com Busca Automática no Banco de Dados */}
+          <div className="bg-gradient-to-r from-indigo-50/90 via-sky-50/40 to-emerald-50/70 border-2 border-indigo-200/90 rounded-2xl p-4 sm:p-5 space-y-3 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-xs">
+                  <Barcode className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-900 text-sm sm:text-base">
+                      Lançamento por Código (Busca Automática)
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
+                      ✓ Banco de Dados Ativo ({catalog.length} produtos)
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Digite o código (ex: <strong>47</strong>, <strong>46</strong>, <strong>10</strong>, <strong>12</strong>, <strong>237</strong>, <strong>319</strong>) e o nome e preço oficial são puxados na hora.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsBatchCodeModalOpen(true)}
+                className="px-3.5 py-2 bg-white hover:bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer self-start sm:self-auto"
+              >
+                <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Colar Vários Códigos em Massa</span>
               </button>
             </div>
+
+            <form onSubmit={handleAddProductByCode} className="flex flex-wrap sm:flex-nowrap items-center gap-2 pt-1">
+              <div className="relative flex-1 min-w-[220px]">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <Hash className="w-4 h-4 text-indigo-500" />
+                </div>
+                <input
+                  ref={fastCodeInputRef}
+                  type="text"
+                  value={fastCodeInput}
+                  onChange={(e) => handleFastCodeChange(e.target.value)}
+                  placeholder="Digite o código (ex: 47, 46, 10, 12, 237, 319)..."
+                  className="w-full pl-9 pr-3 py-2.5 border-2 border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 rounded-xl text-xs sm:text-sm font-mono font-bold bg-white outline-none shadow-2xs transition-all"
+                />
+              </div>
+
+              <div className="w-28 sm:w-32 flex items-center border-2 border-slate-300 bg-white rounded-xl overflow-hidden focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-200 shadow-2xs">
+                <span className="text-[11px] font-bold text-slate-500 px-2.5 select-none bg-slate-50 py-2.5 border-r border-slate-200">
+                  Qtd
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  value={fastQuantityInput}
+                  onChange={(e) => setFastQuantityInput(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  className="w-full py-2.5 pr-2 text-xs sm:text-sm font-bold text-center outline-none bg-transparent"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={!fastCodeInput.trim()}
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 shadow-md transition-all cursor-pointer shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Inserir no Pedido</span>
+              </button>
+            </form>
+
+            {/* Live Preview Card */}
+            {matchedCatalogProduct && (
+              <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-emerald-950 animate-in fade-in">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
+                    ✓
+                  </div>
+                  <div>
+                    <span className="font-mono font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">
+                      Cód: {matchedCatalogProduct.code}
+                    </span>{' '}
+                    <span className="font-bold text-slate-900 text-sm ml-1">
+                      {matchedCatalogProduct.name}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 self-end sm:self-auto">
+                  <div className="text-right">
+                    <span className="text-[11px] text-emerald-700 block">Preço unitário no Banco:</span>
+                    <span className="text-sm font-mono font-black text-emerald-900">
+                      R$ {matchedCatalogProduct.price.toFixed(2).replace('.', ',')}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddProductByCode}
+                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm cursor-pointer transition-colors"
+                  >
+                    Confirmar (+{fastQuantityInput})
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Feedback message */}
+            {fastEntryFeedback && (
+              <div className="text-xs font-bold text-indigo-800 flex items-center gap-2 bg-indigo-100/80 px-3 py-2 rounded-xl border border-indigo-200 animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span>{fastEntryFeedback}</span>
+              </div>
+            )}
           </div>
 
           {/* Quick Add Bar for Items Tab */}
@@ -1352,17 +1724,35 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                           onChange={(e) => handleUpdateItem(item.id, 'code', e.target.value)}
                           placeholder={`#0${index + 1}`}
                           className={`w-full border rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 ${
-                            item.code.startsWith('#') || item.code.toUpperCase().startsWith('COD') || item.code.toUpperCase().startsWith('SKU')
+                            lookupCatalogProduct(item.code)
+                              ? 'border-emerald-300 bg-emerald-50/60 text-emerald-950'
+                              : item.code.startsWith('#') || item.code.toUpperCase().startsWith('COD') || item.code.toUpperCase().startsWith('SKU')
                               ? 'border-amber-300 bg-amber-50/60 text-amber-950'
                               : 'border-slate-200 bg-slate-50/50 text-slate-800'
                           }`}
                         />
-                        {item.code ? (
-                          <div className="flex items-center gap-1 text-[10px] text-emerald-700 font-semibold">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                            <span>Identificado</span>
-                          </div>
-                        ) : null}
+                        {(() => {
+                          const inCatalog = lookupCatalogProduct(item.code);
+                          if (inCatalog) {
+                            return (
+                              <div
+                                className="flex items-center gap-1 text-[10px] text-emerald-700 font-bold"
+                                title={`No Banco de Dados: ${inCatalog.name} (R$ ${inCatalog.price.toFixed(2)})`}
+                              >
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                <span className="truncate">BD: R$ {inCatalog.price.toFixed(2).replace('.', ',')}</span>
+                              </div>
+                            );
+                          } else if (item.code) {
+                            return (
+                              <div className="flex items-center gap-1 text-[10px] text-slate-400 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                                <span>Manual</span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                     </td>
 
@@ -1967,6 +2357,97 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
         catalog={catalog}
         onUpdateCatalog={handleCatalogChange}
       />
+
+      {/* Modal de Lançamento de Códigos em Massa */}
+      {isBatchCodeModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-100 text-indigo-700 rounded-xl">
+                  <Barcode className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Lançar Códigos em Massa
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Busca automática no Banco de Dados ({catalog.length} produtos)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBatchCodeModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Cole ou digite os códigos dos produtos (um por linha ou separados por vírgula). Se desejar quantidade específica, use <code>x 2</code> ou <code>x2</code>.
+            </p>
+
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setBatchCodeText("47 x 2\n46 x 5\n10 x 3\n12 x 1\n237 x 4\n319 x 2")}
+                className="text-[11px] px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 rounded-lg font-bold cursor-pointer"
+              >
+                Exemplo: 47 x 2, 46 x 5, 237...
+              </button>
+              <button
+                type="button"
+                onClick={() => setBatchCodeText("41, 12, 42, 24, 346, 20, 28, 44, 47, 46, 10, 15, 11, 18, 308, 319, 29, 27, 30, 21, 26")}
+                className="text-[11px] px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-lg font-bold cursor-pointer"
+              >
+                Exemplo: Códigos das Lixas (Vírgula)
+              </button>
+              <button
+                type="button"
+                onClick={() => setBatchCodeText("237, 235, 4, 357, 5, 6, 8, 7, 9")}
+                className="text-[11px] px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-lg font-bold cursor-pointer"
+              >
+                Exemplo: Extra Brilhos / Removedores
+              </button>
+            </div>
+
+            <textarea
+              rows={7}
+              value={batchCodeText}
+              onChange={(e) => setBatchCodeText(e.target.value)}
+              placeholder={`Exemplos:\n47 x 2\n46 x 5\n10 x 3\n237\n319 x 4\n\nOu cole os códigos separados por vírgula:\n47, 46, 10, 12, 237, 319`}
+              className="w-full border border-slate-300 rounded-xl p-3 text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500"
+            ></textarea>
+
+            <div className="flex justify-between items-center pt-2">
+              <span className="text-[11px] text-slate-500">
+                Puxa descrição e preço de cada código cadastrado.
+              </span>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsBatchCodeModalOpen(false)}
+                  className="px-4 py-2 border border-slate-200 text-xs font-semibold rounded-xl hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyBatchCodes}
+                  disabled={!batchCodeText.trim()}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Inserir no Pedido</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
