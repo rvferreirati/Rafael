@@ -245,6 +245,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   const [fastCodeInput, setFastCodeInput] = useState<string>('');
   const [fastQuantityInput, setFastQuantityInput] = useState<number>(1);
   const [matchedCatalogProduct, setMatchedCatalogProduct] = useState<CatalogProduct | null>(null);
+  const [matchingProducts, setMatchingProducts] = useState<CatalogProduct[]>([]);
   const [fastEntryFeedback, setFastEntryFeedback] = useState<string | null>(null);
   const fastCodeInputRef = useRef<HTMLInputElement>(null);
 
@@ -252,44 +253,121 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   const [isBatchCodeModalOpen, setIsBatchCodeModalOpen] = useState<boolean>(false);
   const [batchCodeText, setBatchCodeText] = useState<string>('');
 
-  // Helper to strictly look up product in the database by code (or name if explicit word query)
-  const lookupCatalogProduct = (query: string): CatalogProduct | undefined => {
-    if (!query) return undefined;
-    const clean = query.trim().replace(/^#/, '').replace(/^COD:?\s*/i, '').replace(/^SKU:?\s*/i, '').trim().toLowerCase();
-    if (!clean || clean === '-') return undefined;
+  const normalizeForSearch = (str: string) =>
+    (str || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
 
-    // 1. Exact match on clean code (e.g. "47", "10", "237")
-    let found = catalog.find((p) => {
-      const pCodeClean = (p.code || '').replace(/^#/, '').replace(/^COD:?\s*/i, '').replace(/^SKU:?\s*/i, '').trim().toLowerCase();
-      return pCodeClean && pCodeClean !== '-' && pCodeClean === clean;
+  // Helper to search ALL products matching code OR product name (returns all matching options)
+  const searchAllCatalogProducts = (query: string): CatalogProduct[] => {
+    if (!query) return [];
+    const raw = query.trim();
+    if (raw.length === 0) return [];
+
+    const normQuery = normalizeForSearch(raw);
+    const cleanCode = raw.replace(/^#/, '').replace(/^COD:?\s*/i, '').replace(/^SKU:?\s*/i, '').trim().toLowerCase();
+    const numClean = parseInt(cleanCode, 10);
+    const isPureNumber = !isNaN(numClean) && String(numClean) === cleanCode.replace(/^0+/, '');
+
+    const results: { product: CatalogProduct; score: number }[] = [];
+    const seen = new Set<string>();
+
+    catalog.forEach((p) => {
+      const pKey = `${p.code || '-'}_${p.name}`;
+      if (seen.has(pKey)) return;
+
+      const pCodeRaw = (p.code || '').trim();
+      const pCodeClean = pCodeRaw.replace(/^#/, '').replace(/^COD:?\s*/i, '').replace(/^SKU:?\s*/i, '').trim().toLowerCase();
+      const pNormName = normalizeForSearch(p.name);
+      const pNum = parseInt(pCodeClean, 10);
+
+      let score = 0;
+
+      // 1. Exact code match (e.g. "47", "10", "237")
+      if (pCodeClean && pCodeClean !== '-' && pCodeClean === cleanCode) {
+        score = 1000;
+      }
+      // 2. Pure number code match (e.g. "010" vs "10")
+      else if (isPureNumber && !isNaN(pNum) && pCodeClean !== '-' && pNum === numClean) {
+        score = 950;
+      }
+      // 3. Exact name match
+      else if (pNormName === normQuery) {
+        score = 900;
+      }
+      // 4. Code starts with query (e.g. typing "1" gives "10", "11", "12")
+      else if (pCodeClean && pCodeClean !== '-' && pCodeClean.startsWith(cleanCode)) {
+        score = 800;
+      }
+      // 5. Name starts with query (e.g. "lixa...")
+      else if (pNormName.startsWith(normQuery)) {
+        score = 700;
+      }
+      // 6. Name contains query as a distinct word or substring (e.g. "mini lixa buffer")
+      else if (pNormName.includes(normQuery)) {
+        score = 500;
+      }
+      // 7. Token matching (every word in query is in product name)
+      else {
+        const tokens = normQuery.split(/\s+/).filter((t) => t.length >= 2);
+        if (tokens.length > 1 && tokens.every((tok) => pNormName.includes(tok))) {
+          score = 300;
+        }
+      }
+
+      if (score > 0) {
+        seen.add(pKey);
+        results.push({ product: p, score });
+      }
     });
-    if (found) return found;
 
-    // 2. Numerical comparison (e.g. "047" vs "47")
-    const numClean = parseInt(clean, 10);
-    if (!isNaN(numClean) && String(numClean) === clean.replace(/^0+/, '')) {
-      found = catalog.find((p) => {
-        const pClean = (p.code || '').replace(/^#/, '').replace(/^COD:?\s*/i, '').trim();
-        const pNum = parseInt(pClean, 10);
-        return !isNaN(pNum) && pClean !== '-' && pNum === numClean;
-      });
-      if (found) return found;
-    }
+    // Sort by relevance score descending, then alphabetically by name
+    results.sort((a, b) => b.score - a.score || a.product.name.localeCompare(b.product.name));
+    return results.map((r) => r.product);
+  };
 
-    // 3. ONLY if query is NOT purely numbers/code (e.g. "acetona" or "polidor"), allow matching by product name
-    const isPureCode = /^[0-9]+$/.test(clean) || /^[A-Z0-9\-_]{1,5}$/i.test(clean);
-    if (!isPureCode && clean.length >= 4) {
-      found = catalog.find((p) => (p.name || '').toLowerCase().includes(clean));
-      if (found) return found;
-    }
-
-    return undefined;
+  // Helper to look up top product in the database by code OR by product name
+  const lookupCatalogProduct = (query: string): CatalogProduct | undefined => {
+    const matches = searchAllCatalogProducts(query);
+    return matches.length > 0 ? matches[0] : undefined;
   };
 
   const handleFastCodeChange = (val: string) => {
     setFastCodeInput(val);
-    const match = lookupCatalogProduct(val);
-    setMatchedCatalogProduct(match || null);
+    if (!val.trim()) {
+      setMatchingProducts([]);
+      setMatchedCatalogProduct(null);
+      return;
+    }
+    const matches = searchAllCatalogProducts(val);
+    setMatchingProducts(matches);
+    setMatchedCatalogProduct(matches[0] || null);
+  };
+
+  const handleAddSingleProduct = (product: CatalogProduct) => {
+    const qty = Math.max(1, Number(fastQuantityInput) || 1);
+    const itemCode = product.code && product.code !== '-' ? product.code : '';
+    handleAddItem(itemCode, product.name, qty, product.price);
+    setFastEntryFeedback(
+      `✓ Adicionado: ${itemCode ? `[${itemCode}] ` : ''}${product.name} (+${qty} un • R$ ${(qty * product.price).toFixed(2).replace('.', ',')})`
+    );
+    setTimeout(() => setFastEntryFeedback(null), 3000);
+  };
+
+  const handleAddAllMatchingProducts = () => {
+    if (matchingProducts.length === 0) return;
+    const qty = Math.max(1, Number(fastQuantityInput) || 1);
+    matchingProducts.forEach((product) => {
+      const itemCode = product.code && product.code !== '-' ? product.code : '';
+      handleAddItem(itemCode, product.name, qty, product.price);
+    });
+    setFastEntryFeedback(`✓ Todos os ${matchingProducts.length} produtos foram adicionados ao pedido!`);
+    setFastCodeInput('');
+    setMatchingProducts([]);
+    setMatchedCatalogProduct(null);
+    setTimeout(() => setFastEntryFeedback(null), 3500);
   };
 
   const handleAddProductByCode = (e?: React.FormEvent) => {
@@ -297,7 +375,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     const raw = fastCodeInput.trim();
     if (!raw) return;
 
-    // Check if user entered multiple comma-separated codes (e.g. "47, 46, 10")
+    // Check if user entered multiple comma-separated codes or names (e.g. "47, 46, 10")
     const tokens = raw.includes(',') ? raw.split(',').map((t) => t.trim()).filter(Boolean) : [raw];
 
     let addedCount = 0;
@@ -306,10 +384,12 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     tokens.forEach((token) => {
       const match = lookupCatalogProduct(token);
       if (match) {
-        handleAddItem(match.code, match.name, qty, match.price);
+        const itemCode = match.code && match.code !== '-' ? match.code : '';
+        handleAddItem(itemCode, match.name, qty, match.price);
         addedCount++;
       } else {
-        handleAddItem(token, `Produto ${token}`, qty, 0);
+        // If not found in catalog, add with the typed name and empty code so user can set price
+        handleAddItem('', token, qty, 0);
         addedCount++;
       }
     });
@@ -317,17 +397,32 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     if (tokens.length === 1) {
       const match = lookupCatalogProduct(tokens[0]);
       if (match) {
-        setFastEntryFeedback(`✓ Adicionado: [${match.code}] ${match.name} (R$ ${match.price.toFixed(2).replace('.', ',')})`);
+        if (matchingProducts.length > 1) {
+          setFastEntryFeedback(
+            `✓ Adicionado: ${match.code && match.code !== '-' ? `[${match.code}] ` : ''}${match.name}. (Mais ${matchingProducts.length - 1} opções disponíveis na lista abaixo)`
+          );
+        } else {
+          setFastEntryFeedback(
+            `✓ Adicionado: ${match.code && match.code !== '-' ? `[${match.code}] ` : ''}${match.name} (R$ ${match.price.toFixed(2).replace('.', ',')})`
+          );
+          setFastCodeInput('');
+          setMatchingProducts([]);
+          setMatchedCatalogProduct(null);
+        }
       } else {
-        setFastEntryFeedback(`Item com código "${tokens[0]}" adicionado ao pedido.`);
+        setFastEntryFeedback(`✓ Produto "${tokens[0]}" inserido no pedido.`);
+        setFastCodeInput('');
+        setMatchingProducts([]);
+        setMatchedCatalogProduct(null);
       }
     } else {
-      setFastEntryFeedback(`✓ ${addedCount} produtos adicionados com sucesso!`);
+      setFastEntryFeedback(`✓ ${addedCount} produtos inseridos com sucesso!`);
+      setFastCodeInput('');
+      setMatchingProducts([]);
+      setMatchedCatalogProduct(null);
     }
 
-    setFastCodeInput('');
     setFastQuantityInput(1);
-    setMatchedCatalogProduct(null);
     setTimeout(() => setFastEntryFeedback(null), 3500);
     fastCodeInputRef.current?.focus();
   };
@@ -548,13 +643,27 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   const handleAddItem = (code = '', description = '', quantity = 1, unitPrice = 0) => {
     const newItem: LineItem = {
       id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      code: code || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
+      code: code || '',
       description,
       quantity,
       unitPrice,
       total: quantity * unitPrice,
     };
-    setItems((prev) => [...prev, newItem]);
+    setItems((prev) => {
+      // Helper to check if a row is completely blank
+      const isBlankPlaceholder = (it: LineItem) =>
+        (!it.description || it.description.trim() === '') &&
+        (!it.unitPrice || it.unitPrice === 0) &&
+        (!it.code || it.code.trim() === '' || it.code.startsWith('SKU-'));
+
+      // If we are adding a real product and the table only has a blank row, replace it!
+      const hasContent = description.trim() !== '' || unitPrice > 0 || code.trim() !== '';
+      if (hasContent) {
+        const withoutBlank = prev.filter((it) => !isBlankPlaceholder(it));
+        return [...withoutBlank, newItem];
+      }
+      return [...prev, newItem];
+    });
   };
 
   const handleUpdateItem = (id: string, field: keyof LineItem, val: any) => {
@@ -577,6 +686,19 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             updated.description = match.name;
             updated.unitPrice = match.price;
             updated.total = (updated.quantity || 1) * match.price;
+          }
+        } else if (field === 'description') {
+          updated.description = val;
+          // Auto-fill price and code when writing the product name in description column
+          const match = lookupCatalogProduct(val);
+          if (match) {
+            if (!updated.code || updated.code.startsWith('SKU-') || updated.code.trim() === '') {
+              updated.code = match.code && match.code !== '-' ? match.code : '';
+            }
+            if (!updated.unitPrice || updated.unitPrice === 0) {
+              updated.unitPrice = match.price;
+              updated.total = (updated.quantity || 1) * match.price;
+            }
           }
         } else {
           (updated as any)[field] = val;
@@ -601,19 +723,6 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   };
 
   const handleRemoveItem = (id: string) => {
-    if (items.length <= 1) {
-      setItems([
-        {
-          id: `item-${Date.now()}`,
-          code: '',
-          description: '',
-          quantity: 1,
-          unitPrice: 0,
-          total: 0,
-        },
-      ]);
-      return;
-    }
     setItems((prev) => prev.filter((i) => i.id !== id));
   };
 
@@ -1538,14 +1647,14 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-slate-900 text-sm sm:text-base">
-                      Lançamento por Código (Busca Automática)
+                      Lançamento por Código ou Nome do Produto
                     </span>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
                       ✓ Banco de Dados Ativo ({catalog.length} produtos)
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Digite o código (ex: <strong>47</strong>, <strong>46</strong>, <strong>10</strong>, <strong>12</strong>, <strong>237</strong>, <strong>319</strong>) e o nome e preço oficial são puxados na hora.
+                    Digite o código (ex: <strong>47</strong>, <strong>10</strong>, <strong>237</strong>) ou escreva o nome do produto (ex: <strong>Lixa moeda</strong>, <strong>Secante</strong>, <strong>Bloco</strong>, <strong>Algodão</strong>).
                   </p>
                 </div>
               </div>
@@ -1563,15 +1672,15 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             <form onSubmit={handleAddProductByCode} className="flex flex-wrap sm:flex-nowrap items-center gap-2 pt-1">
               <div className="relative flex-1 min-w-[220px]">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                  <Hash className="w-4 h-4 text-indigo-500" />
+                  <Search className="w-4 h-4 text-indigo-500" />
                 </div>
                 <input
                   ref={fastCodeInputRef}
                   type="text"
                   value={fastCodeInput}
                   onChange={(e) => handleFastCodeChange(e.target.value)}
-                  placeholder="Digite o código (ex: 47, 46, 10, 12, 237, 319)..."
-                  className="w-full pl-9 pr-3 py-2.5 border-2 border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 rounded-xl text-xs sm:text-sm font-mono font-bold bg-white outline-none shadow-2xs transition-all"
+                  placeholder="Digite o código (ex: 47) ou o nome do produto (ex: Lixa moeda, Secante)..."
+                  className="w-full pl-9 pr-3 py-2.5 border-2 border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 rounded-xl text-xs sm:text-sm font-semibold bg-white outline-none shadow-2xs transition-all placeholder:text-slate-400"
                 />
               </div>
 
@@ -1598,35 +1707,111 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
               </button>
             </form>
 
-            {/* Live Preview Card */}
-            {matchedCatalogProduct && (
-              <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-emerald-950 animate-in fade-in">
+            {/* Live Search Results List - Showing ALL matching products */}
+            {fastCodeInput.trim().length >= 1 && matchingProducts.length > 0 && (
+              <div className="bg-white border-2 border-emerald-400 rounded-2xl p-3.5 shadow-lg space-y-2.5 animate-in fade-in slide-in-from-top-1">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-emerald-100">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+                      {matchingProducts.length}
+                    </div>
+                    <div>
+                      <span className="text-xs font-black text-slate-800">
+                        {matchingProducts.length === 1
+                          ? `1 produto encontrado para "${fastCodeInput}":`
+                          : `${matchingProducts.length} produtos encontrados para "${fastCodeInput}" no Banco de Dados:`}
+                      </span>
+                      <span className="text-[11px] text-emerald-700 block font-medium">
+                        Clique no produto desejado para adicionar ao pedido:
+                      </span>
+                    </div>
+                  </div>
+
+                  {matchingProducts.length > 1 && (
+                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={handleAddAllMatchingProducts}
+                        className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer transition-all flex items-center gap-1.5"
+                        title="Adicionar todos os itens encontrados de uma vez ao pedido"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Adicionar Todos ({matchingProducts.length} itens)</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Scrollable list of ALL matching items */}
+                <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 rounded-xl border border-slate-200 bg-slate-50/50">
+                  {matchingProducts.map((p, idx) => {
+                    const hasCode = p.code && p.code !== '-';
+                    return (
+                      <div
+                        key={`${p.code || 'nocode'}-${p.name}-${idx}`}
+                        onClick={() => handleAddSingleProduct(p)}
+                        className="p-2.5 hover:bg-emerald-50/90 transition-colors flex items-center justify-between gap-3 group cursor-pointer bg-white"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          {hasCode ? (
+                            <span className="font-mono font-bold text-xs px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">
+                              Cód: {p.code}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-500 font-semibold px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 shrink-0">
+                              Sem cód
+                            </span>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <span className="font-bold text-slate-800 text-xs sm:text-sm group-hover:text-emerald-950 transition-colors block truncate">
+                              {p.name}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2.5 shrink-0">
+                          <span className="font-mono font-black text-emerald-700 text-xs sm:text-sm">
+                            R$ {p.price.toFixed(2).replace('.', ',')}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAddSingleProduct(p);
+                            }}
+                            className="px-2.5 py-1 bg-emerald-600 group-hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-2xs cursor-pointer transition-colors flex items-center gap-1"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>+{fastQuantityInput}</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Custom Item Preview if not found in catalog */}
+            {matchingProducts.length === 0 && fastCodeInput.trim().length >= 2 && (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-800 animate-in fade-in">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
-                    ✓
+                  <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-xs shrink-0">
+                    +
                   </div>
                   <div>
-                    <span className="font-mono font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">
-                      Cód: {matchedCatalogProduct.code}
-                    </span>{' '}
-                    <span className="font-bold text-slate-900 text-sm ml-1">
-                      {matchedCatalogProduct.name}
-                    </span>
+                    <span className="font-medium text-slate-500">Inserir produto pelo nome:</span>{' '}
+                    <strong className="text-slate-900 font-bold">"{fastCodeInput.trim()}"</strong>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 self-end sm:self-auto">
-                  <div className="text-right">
-                    <span className="text-[11px] text-emerald-700 block">Preço unitário no Banco:</span>
-                    <span className="text-sm font-mono font-black text-emerald-900">
-                      R$ {matchedCatalogProduct.price.toFixed(2).replace('.', ',')}
-                    </span>
-                  </div>
+                <div className="flex items-center gap-2 self-end sm:self-auto">
+                  <span className="text-[11px] text-slate-500">Preço pode ser ajustado na tabela</span>
                   <button
                     type="button"
                     onClick={handleAddProductByCode}
-                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm cursor-pointer transition-colors"
+                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shadow-2xs cursor-pointer transition-colors"
                   >
-                    Confirmar (+{fastQuantityInput})
+                    + Inserir (+{fastQuantityInput})
                   </button>
                 </div>
               </div>
@@ -1713,7 +1898,22 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
-                {items.map((item, index) => (
+                {items.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-10 px-4 text-center">
+                      <div className="max-w-md mx-auto space-y-2">
+                        <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
+                          <Package className="w-5 h-5" />
+                        </div>
+                        <p className="text-xs font-bold text-slate-700">Nenhum produto adicionado ao pedido ainda</p>
+                        <p className="text-[11px] text-slate-500">
+                          Digite o <strong>código</strong> ou o <strong>nome do produto</strong> na barra acima para adicionar automaticamente com preço do banco de dados, ou clique em <strong>"+ Adicionar Linha Manual"</strong> abaixo.
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  items.map((item, index) => (
                   <tr key={item.id} className="hover:bg-indigo-50/20 transition-colors">
                     {/* SKU Code */}
                     <td className="py-3 px-3">
@@ -1835,7 +2035,8 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                       </button>
                     </td>
                   </tr>
-                ))}
+                ))
+              )}
               </tbody>
             </table>
           </div>
