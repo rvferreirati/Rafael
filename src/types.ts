@@ -5,6 +5,8 @@ export interface LineItem {
   quantity: number;
   unitPrice: number;
   total: number;
+  stockItemId?: string;
+  costPrice?: number;
 }
 
 export interface Customer {
@@ -16,12 +18,44 @@ export interface Customer {
   address: string;
 }
 
+export interface StockItem {
+  id: string;
+  code: string;             // Código / SKU
+  name: string;             // Descrição do Produto
+  currentStock: number;     // Em Estoque (Qtd atual)
+  minStock?: number;        // Estoque Mínimo
+  costPrice: number;        // Preço de Custo (R$)
+  wholesalePrice: number;   // Preço Atacado (R$)
+  retailPrice: number;      // Preço Varejo (R$)
+  category?: string;        // Categoria / Marca
+  unit?: string;            // 'un', 'cx', 'pct'
+  notes?: string;           // Observações
+  updatedAt?: number;
+}
+
+export interface StockMovement {
+  id: string;
+  stockItemId: string;
+  itemCode: string;
+  itemName: string;
+  type: 'sale' | 'cancellation_return' | 'manual_adjustment' | 'purchase_entry' | 'initial_import';
+  quantity: number; // positive or negative
+  previousStock: number;
+  newStock: number;
+  orderId?: string;
+  orderNumber?: string;
+  reason?: string;
+  timestamp: number;
+}
+
 export interface SalesOrder {
   id: string;
   orderNumber: string;
   orderDate: string;
   orderDueDate: string;
-  status: 'draft' | 'confirmed' | 'delivered';
+  status: 'draft' | 'confirmed' | 'delivered' | 'cancelled';
+  priceType?: 'wholesale' | 'retail' | 'custom';
+  stockDeducted?: boolean;
   customer: {
     id?: string;
     name: string;

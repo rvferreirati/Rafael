@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import Tesseract from 'tesseract.js';
 import confetti from 'canvas-confetti';
 import {
@@ -37,9 +37,11 @@ import {
   Database,
   Hash,
   Search,
-  Barcode
+  Barcode,
+  FileSpreadsheet,
+  Boxes
 } from 'lucide-react';
-import { Customer, LineItem, SalesOrder, CompanyProfile } from '../types';
+import { Customer, LineItem, SalesOrder, CompanyProfile, StockItem } from '../types';
 import { parseOCRText } from '../utils/ocrParser';
 import { generateSalesOrderPDF } from '../utils/pdfGenerator';
 import { SAMPLE_PRESETS, createSampleInvoiceImage } from '../utils/sampleInvoices';
@@ -57,6 +59,7 @@ import {
   mergeCatalogProducts,
   reconcileItemsWithCatalog
 } from '../utils/productCatalog';
+import { loadStoredStock, importOrderItemsFromExcel } from '../utils/stockManager';
 import { CatalogModal } from './CatalogModal';
 
 export interface QuickCatalogProduct {
@@ -83,6 +86,8 @@ interface CreateOrderTabProps {
   onUpdateCatalog?: (newCatalog: CatalogProduct[]) => void;
   onSyncCatalog?: () => void;
   isSyncing?: boolean;
+  stockList?: StockItem[];
+  onUpdateStock?: (newStock: StockItem[]) => void;
 }
 
 export type OrderFlowStep = 'upload' | 'items' | 'review';
@@ -110,6 +115,8 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   onUpdateCatalog,
   onSyncCatalog,
   isSyncing,
+  stockList: propStockList,
+  onUpdateStock,
 }) => {
   // --- Active Step in Order Creation Flow ---
   const [activeStep, setActiveStep] = useState<OrderFlowStep>('upload');
@@ -237,15 +244,33 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       { id: `item-${Date.now()}-2`, code: '#46', description: 'Lixa mini canário pura arte com...', quantity: 1, unitPrice: 7.7, total: 7.7 },
       { id: `item-${Date.now()}-3`, code: '#10', description: 'Lixa moeda preta podóloga grão...', quantity: 1, unitPrice: 6.93, total: 6.93 },
     ]);
-    setFeedbackSuccess('🎯 Produtos do print identificados com 100% de precisão via Banco de Dados (#47, #46, #10)!');
+    setFeedbackSuccess('🎯 Produtos do print identificados com 100% de precisão via Estoque (#47, #46, #10)!');
     setActiveStep('items');
   };
 
-  // Fast Code Entry & Database Lookup States
+  // Fast Code Entry, Stock & Database Lookup States
   const [fastCodeInput, setFastCodeInput] = useState<string>('');
   const [fastQuantityInput, setFastQuantityInput] = useState<number>(1);
-  const [matchedCatalogProduct, setMatchedCatalogProduct] = useState<CatalogProduct | null>(null);
-  const [matchingProducts, setMatchingProducts] = useState<CatalogProduct[]>([]);
+  const [priceType, setPriceType] = useState<'wholesale' | 'retail'>('wholesale');
+  const excelOrderInputRef = useRef<HTMLInputElement>(null);
+  const [isExcelImporting, setIsExcelImporting] = useState<boolean>(false);
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [isClearConfirmOpen, setIsClearConfirmOpen] = useState<boolean>(false);
+
+  // Active stock list for inventory control & wholesale/retail pricing
+  const activeStock = useMemo(() => {
+    return propStockList && propStockList.length > 0 ? propStockList : loadStoredStock();
+  }, [propStockList]);
+
+  type EnrichedCatalogProduct = CatalogProduct & {
+    currentStock?: number;
+    wholesalePrice?: number;
+    retailPrice?: number;
+    costPrice?: number;
+  };
+
+  const [matchedCatalogProduct, setMatchedCatalogProduct] = useState<EnrichedCatalogProduct | null>(null);
+  const [matchingProducts, setMatchingProducts] = useState<EnrichedCatalogProduct[]>([]);
   const [fastEntryFeedback, setFastEntryFeedback] = useState<string | null>(null);
   const fastCodeInputRef = useRef<HTMLInputElement>(null);
 
@@ -261,7 +286,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       .trim();
 
   // Helper to search ALL products matching code OR product name (returns all matching options)
-  const searchAllCatalogProducts = (query: string): CatalogProduct[] => {
+  const searchAllCatalogProducts = (query: string): EnrichedCatalogProduct[] => {
     if (!query) return [];
     const raw = query.trim();
     if (raw.length === 0) return [];
@@ -271,17 +296,20 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     const numClean = parseInt(cleanCode, 10);
     const isPureNumber = !isNaN(numClean) && String(numClean) === cleanCode.replace(/^0+/, '');
 
-    const results: { product: CatalogProduct; score: number }[] = [];
+    const results: { product: EnrichedCatalogProduct; score: number }[] = [];
     const seen = new Set<string>();
 
-    catalog.forEach((p) => {
-      const pKey = `${p.code || '-'}_${p.name}`;
+    // First search in activeStock (which has currentStock, wholesalePrice, retailPrice)
+    activeStock.forEach((st: StockItem) => {
+      const pKey = `${st.code || '-'}_${st.name}`;
       if (seen.has(pKey)) return;
 
-      const pCodeRaw = (p.code || '').trim();
+      const pCodeRaw = (st.code || '').trim();
       const pCodeClean = pCodeRaw.replace(/^#/, '').replace(/^COD:?\s*/i, '').replace(/^SKU:?\s*/i, '').trim().toLowerCase();
-      const pNormName = normalizeForSearch(p.name);
+      const pNormName = normalizeForSearch(st.name);
       const pNum = parseInt(pCodeClean, 10);
+
+      const effectivePrice = priceType === 'wholesale' ? st.wholesalePrice : st.retailPrice;
 
       let score = 0;
 
@@ -299,17 +327,33 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       }
       // 4. Code starts with query (e.g. typing "1" gives "10", "11", "12")
       else if (pCodeClean && pCodeClean !== '-' && pCodeClean.startsWith(cleanCode)) {
+        score = 850;
+      }
+      // 5. Code ENDS with query (Last digits of code, e.g. "46" matches "#346", "37" matches "#237", "7" matches "#47")
+      else if (pCodeClean && pCodeClean !== '-' && cleanCode.length >= 1 && pCodeClean.endsWith(cleanCode)) {
+        score = 840;
+      }
+      // 6. Number ends with query digits
+      else if (isPureNumber && !isNaN(pNum) && pCodeClean !== '-' && String(pNum).endsWith(String(numClean))) {
+        score = 830;
+      }
+      // 7. Code contains query anywhere
+      else if (pCodeClean && pCodeClean !== '-' && pCodeClean.includes(cleanCode)) {
         score = 800;
       }
-      // 5. Name starts with query (e.g. "lixa...")
+      // 8. Name starts with query (e.g. "lixa...")
       else if (pNormName.startsWith(normQuery)) {
         score = 700;
       }
-      // 6. Name contains query as a distinct word or substring (e.g. "mini lixa buffer")
+      // 9. Name contains query as a distinct word or substring (e.g. "mini lixa buffer")
       else if (pNormName.includes(normQuery)) {
         score = 500;
       }
-      // 7. Token matching (every word in query is in product name)
+      // 10. Product name contains the code digits
+      else if (cleanCode.length >= 2 && pNormName.includes(cleanCode)) {
+        score = 450;
+      }
+      // 11. Token matching (every word in query is in product name)
       else {
         const tokens = normQuery.split(/\s+/).filter((t) => t.length >= 2);
         if (tokens.length > 1 && tokens.every((tok) => pNormName.includes(tok))) {
@@ -319,7 +363,19 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
 
       if (score > 0) {
         seen.add(pKey);
-        results.push({ product: p, score });
+        results.push({
+          product: {
+            id: st.id,
+            code: st.code,
+            name: st.name,
+            price: effectivePrice,
+            currentStock: st.currentStock,
+            wholesalePrice: st.wholesalePrice,
+            retailPrice: st.retailPrice,
+            costPrice: st.costPrice,
+          },
+          score,
+        });
       }
     });
 
@@ -329,9 +385,43 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   };
 
   // Helper to look up top product in the database by code OR by product name
-  const lookupCatalogProduct = (query: string): CatalogProduct | undefined => {
+  const lookupCatalogProduct = (query: string): EnrichedCatalogProduct | undefined => {
     const matches = searchAllCatalogProducts(query);
     return matches.length > 0 ? matches[0] : undefined;
+  };
+
+  // Helper to get real-time stock details for an item in the order
+  const getStockInfoForItem = (item: LineItem): StockItem | undefined => {
+    if (!activeStock || activeStock.length === 0) return undefined;
+    const cleanCode = (item.code || '').replace(/^#/, '').replace(/^COD:?\s*/i, '').replace(/^SKU:?\s*/i, '').trim().toLowerCase();
+    const numCode = parseInt(cleanCode, 10);
+
+    // 1. Match by clean code, exact numeric code or ending digits (e.g. 47 vs 9200047)
+    if (cleanCode && cleanCode !== '-') {
+      const match = activeStock.find((st) => {
+        const stClean = (st.code || '').replace(/^#/, '').replace(/^COD:?\s*/i, '').replace(/^SKU:?\s*/i, '').trim().toLowerCase();
+        if (stClean === cleanCode) return true;
+        if (!isNaN(numCode)) {
+          const stNum = parseInt(stClean, 10);
+          if (!isNaN(stNum) && stNum === numCode) return true;
+        }
+        if (cleanCode.length >= 2 && (stClean.endsWith(cleanCode) || cleanCode.endsWith(stClean))) return true;
+        return false;
+      });
+      if (match) return match;
+    }
+
+    // 2. Match by normalized name or description
+    const normDesc = normalizeForSearch(item.description);
+    if (normDesc.length >= 3) {
+      const match = activeStock.find((st) => {
+        const stNorm = normalizeForSearch(st.name);
+        return stNorm === normDesc || (stNorm.length > 5 && normDesc.includes(stNorm)) || (normDesc.length > 5 && stNorm.includes(normDesc));
+      });
+      if (match) return match;
+    }
+
+    return undefined;
   };
 
   const handleFastCodeChange = (val: string) => {
@@ -346,12 +436,12 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     setMatchedCatalogProduct(matches[0] || null);
   };
 
-  const handleAddSingleProduct = (product: CatalogProduct) => {
+  const handleAddSingleProduct = (product: EnrichedCatalogProduct) => {
     const qty = Math.max(1, Number(fastQuantityInput) || 1);
     const itemCode = product.code && product.code !== '-' ? product.code : '';
     handleAddItem(itemCode, product.name, qty, product.price);
     setFastEntryFeedback(
-      `✓ Adicionado: ${itemCode ? `[${itemCode}] ` : ''}${product.name} (+${qty} un • R$ ${(qty * product.price).toFixed(2).replace('.', ',')})`
+      `✓ Adicionado: ${itemCode ? `[${itemCode}] ` : ''}${product.name} (+${qty} un • ${priceType === 'wholesale' ? 'Atacado' : 'Varejo'} R$ ${(qty * product.price).toFixed(2).replace('.', ',')})`
     );
     setTimeout(() => setFastEntryFeedback(null), 3000);
   };
@@ -368,6 +458,66 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     setMatchingProducts([]);
     setMatchedCatalogProduct(null);
     setTimeout(() => setFastEntryFeedback(null), 3500);
+  };
+
+  const handleImportOrderExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsExcelImporting(true);
+    try {
+      const res = await importOrderItemsFromExcel(file, activeStock, priceType);
+      if (res.success && res.items.length > 0) {
+        setItems((prev) => {
+          const isBlankPlaceholder = (it: LineItem) =>
+            (!it.code || it.code.startsWith('#') || it.code.trim() === '') &&
+            (!it.description || it.description.trim() === '') &&
+            (!it.unitPrice || it.unitPrice === 0);
+
+          const cleaned = prev.filter((it) => !isBlankPlaceholder(it));
+          return [...cleaned, ...res.items];
+        });
+        setFeedbackSuccess(
+          `✓ ${res.items.length} itens carregados da planilha Excel com sucesso! (${res.matchedCount} localizados no estoque)`
+        );
+      } else {
+        setFeedbackSuccess(`Aviso: ${res.message || 'Nenhum item importado.'}`);
+      }
+    } catch (err: any) {
+      alert(`Erro ao ler planilha: ${err?.message || 'Arquivo inválido'}`);
+    } finally {
+      setIsExcelImporting(false);
+      if (excelOrderInputRef.current) excelOrderInputRef.current.value = '';
+    }
+  };
+
+  const handleSwitchPriceType = (type: 'wholesale' | 'retail') => {
+    setPriceType(type);
+    if (items.length > 0) {
+      setItems((prev) =>
+        prev.map((it) => {
+          const cleanCode = (it.code || '').replace(/^#/, '').trim().toLowerCase();
+          const cleanDesc = (it.description || '').trim().toLowerCase();
+          const match = activeStock.find((st: StockItem) => {
+            const stCode = (st.code || '').replace(/^#/, '').trim().toLowerCase();
+            return (cleanCode && stCode && stCode === cleanCode) || st.name.trim().toLowerCase() === cleanDesc;
+          });
+          if (match) {
+            const p = type === 'wholesale' ? match.wholesalePrice : match.retailPrice;
+            return {
+              ...it,
+              unitPrice: p,
+              total: (it.quantity || 1) * p,
+            };
+          }
+          return it;
+        })
+      );
+      setFastEntryFeedback(
+        `✓ Tabela alterada para ${type === 'wholesale' ? 'ATACADO' : 'VAREJO'}. Preços atualizados!`
+      );
+      setTimeout(() => setFastEntryFeedback(null), 3000);
+    }
   };
 
   const handleAddProductByCode = (e?: React.FormEvent) => {
@@ -500,7 +650,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       } else {
         setItems(newItems);
       }
-      setFeedbackSuccess(`✓ ${newItems.length} produto(s) adicionados consultando o Banco de Dados!`);
+      setFeedbackSuccess(`✓ ${newItems.length} produto(s) adicionados consultando o Estoque!`);
       setIsBatchCodeModalOpen(false);
       setBatchCodeText('');
       setActiveStep('items');
@@ -723,7 +873,46 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   };
 
   const handleRemoveItem = (id: string) => {
+    const target = items.find((i) => i.id === id);
+    const label = target?.description || (target?.code ? `Item ${target.code}` : 'Item');
     setItems((prev) => prev.filter((i) => i.id !== id));
+    setSelectedItemIds((prev) => prev.filter((selId) => selId !== id));
+    setFeedbackSuccess(`✓ ${label} foi excluído do pedido.`);
+    setTimeout(() => {
+      setFeedbackSuccess((curr) => (curr?.includes('foi excluído') ? null : curr));
+    }, 2500);
+  };
+
+  const handleToggleSelectItem = (id: string) => {
+    setSelectedItemIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedItemIds.length === items.length) {
+      setSelectedItemIds([]);
+    } else {
+      setSelectedItemIds(items.map((i) => i.id));
+    }
+  };
+
+  const handleDeleteSelectedItems = () => {
+    if (selectedItemIds.length === 0) return;
+    const count = selectedItemIds.length;
+    setItems((prev) => prev.filter((i) => !selectedItemIds.includes(i.id)));
+    setSelectedItemIds([]);
+    setFeedbackSuccess(`✓ ${count} item(ns) removido(s) do pedido!`);
+    setTimeout(() => setFeedbackSuccess(null), 3000);
+  };
+
+  const handleConfirmClearAll = () => {
+    const count = items.length;
+    setItems([]);
+    setSelectedItemIds([]);
+    setIsClearConfirmOpen(false);
+    setFeedbackSuccess(`✓ Tabela limpa: ${count} item(ns) removido(s).`);
+    setTimeout(() => setFeedbackSuccess(null), 3000);
   };
 
   const handleResetForm = () => {
@@ -954,7 +1143,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       }
 
       setFeedbackSuccess(
-        `⚡ Concluído em ${elapsedSeconds}s! ${allExtractedItems.length} produtos do Banco de Dados identificados com 100% de precisão.`
+        `⚡ Concluído em ${elapsedSeconds}s! ${allExtractedItems.length} produtos do Estoque identificados com 100% de precisão.`
       );
 
       // Automatically advance to items tab for review & value adjustment!
@@ -1087,6 +1276,8 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       orderDate,
       orderDueDate,
       status: orderStatus,
+      priceType,
+      stockDeducted: true,
       customer: {
         id: selectedCustomerId || undefined,
         name: custName,
@@ -1108,7 +1299,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       createdAt: Date.now(),
     };
 
-    // Save to order history
+    // Save to order history (which automatically performs stock deduction)
     onSaveOrder(orderData);
 
     // Preload logo for clean rendering in PDF
@@ -1132,7 +1323,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     }
 
     setFeedbackSuccess(
-      `Pedido ${orderNumber} salvo com sucesso com ${attachedImages.length} print(s) anexados! PDF baixado e pronto para envio.`
+      `✓ Pedido ${orderNumber} salvo com sucesso! Baixa de ${items.length} item(ns) realizada no estoque automaticamente.`
     );
   };
 
@@ -1265,7 +1456,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                 Criar Pedido Manualmente por Códigos (Sem precisar de Print)
               </h3>
               <p className="text-xs text-slate-600 max-w-xl leading-relaxed">
-                Não tem foto ou print? Digite ou cole os códigos dos produtos (ex: <strong>47</strong>, <strong>46</strong>, <strong>10</strong>, <strong>12</strong>, <strong>237</strong>, <strong>319</strong>). A descrição oficial e o preço são preenchidos automaticamente consultando o <strong>Banco de Dados ({catalog.length} produtos)</strong>.
+                Não tem foto ou print? Digite ou cole os códigos dos produtos (ex: <strong>9200047</strong>, ou apenas os últimos números <strong>47</strong>, <strong>46</strong>, <strong>10</strong>, <strong>237</strong>, <strong>319</strong>). A descrição oficial e o preço são preenchidos automaticamente consultando o <strong>Estoque ({activeStock.length} produtos)</strong>.
               </p>
             </div>
 
@@ -1535,6 +1726,55 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              <input
+                ref={excelOrderInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleImportOrderExcel}
+                className="hidden"
+              />
+
+              {/* Botão de Importar Planilha Excel para puxar os itens do pedido */}
+              <button
+                type="button"
+                onClick={() => excelOrderInputRef.current?.click()}
+                disabled={isExcelImporting}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                title="Puxar produtos de uma planilha Excel (.xlsx, .xls, .csv) diretamente para o pedido"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>{isExcelImporting ? 'Lendo Excel...' : 'Importar Planilha Excel'}</span>
+              </button>
+
+              {/* Seletor de Tabela de Preço: Atacado vs Varejo */}
+              <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-xl p-1 shadow-2xs">
+                <span className="text-[11px] font-bold text-slate-500 px-2 select-none">Tabela:</span>
+                <button
+                  type="button"
+                  onClick={() => handleSwitchPriceType('wholesale')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    priceType === 'wholesale'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                  title="Usar preços de Atacado da planilha de estoque"
+                >
+                  Atacado
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSwitchPriceType('retail')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    priceType === 'retail'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                  title="Usar preços de Varejo da planilha de estoque"
+                >
+                  Varejo
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setIsWhatsAppModalOpen(true)}
@@ -1552,22 +1792,13 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
               >
                 <span>🎯 Produtos do Print (#47, #46, #10)</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setIsCatalogModalOpen(true)}
-                className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-indigo-200"
-                title="Visualizar e gerenciar os produtos do Banco de Dados"
-              >
-                <Database className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Banco de Dados ({catalog.length})</span>
-              </button>
               {onSyncCatalog && (
                 <button
                   type="button"
                   onClick={onSyncCatalog}
                   disabled={isSyncing}
                   className="px-3 py-2 bg-sky-50 hover:bg-sky-100 active:bg-sky-200 text-sky-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-sky-300 shadow-2xs disabled:opacity-60"
-                  title="Sincronizar Banco de Dados com todos os celulares e computadores"
+                  title="Sincronizar Estoque e Pedidos entre computador e celular"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 text-sky-600 ${isSyncing ? 'animate-spin' : ''}`} />
                   <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar com Celular'}</span>
@@ -1596,7 +1827,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                   fastCodeInputRef.current?.focus();
                 }}
                 className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-indigo-200"
-                title="Lançamento rápido por código de barras ou SKU"
+                title="Lançamento rápido por código de barras, últimos dígitos ou nome"
               >
                 <Barcode className="w-3.5 h-3.5" />
                 <span>+ Lançar por Código</span>
@@ -1621,14 +1852,9 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
               {items.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => {
-                    if (window.confirm('Deseja limpar todos os itens da tabela para começar o pedido do zero?')) {
-                      setItems([]);
-                      setFeedbackSuccess('Tabela limpa. Digite o código do produto para adicionar.');
-                    }
-                  }}
-                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-rose-200"
-                  title="Limpar todos os produtos da tabela para lançar apenas os códigos que você quer"
+                  onClick={() => setIsClearConfirmOpen(true)}
+                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-rose-200 shadow-2xs"
+                  title="Apagar todos os itens da tabela do pedido"
                 >
                   <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                   <span>Limpar Tabela ({items.length})</span>
@@ -1637,7 +1863,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             </div>
           </div>
 
-          {/* Lançamento Rápido por Código com Busca Automática no Banco de Dados */}
+          {/* Lançamento Rápido por Código com Busca Automática no Estoque */}
           <div className="bg-gradient-to-r from-indigo-50/90 via-sky-50/40 to-emerald-50/70 border-2 border-indigo-200/90 rounded-2xl p-4 sm:p-5 space-y-3 shadow-xs">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
@@ -1650,11 +1876,11 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                       Lançamento por Código ou Nome do Produto
                     </span>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
-                      ✓ Banco de Dados Ativo ({catalog.length} produtos)
+                      ✓ Estoque Conectado ({activeStock.length} produtos)
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Digite o código (ex: <strong>47</strong>, <strong>10</strong>, <strong>237</strong>) ou escreva o nome do produto (ex: <strong>Lixa moeda</strong>, <strong>Secante</strong>, <strong>Bloco</strong>, <strong>Algodão</strong>).
+                    Digite o código da planilha (ex: <strong>9200047</strong>), apenas os <strong>últimos números</strong> (ex: digite <strong>46</strong> para achar 9200046 e 92000346, <strong>37</strong> para 92000237) ou o <strong>nome do produto</strong>.
                   </p>
                 </div>
               </div>
@@ -1719,7 +1945,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                       <span className="text-xs font-black text-slate-800">
                         {matchingProducts.length === 1
                           ? `1 produto encontrado para "${fastCodeInput}":`
-                          : `${matchingProducts.length} produtos encontrados para "${fastCodeInput}" no Banco de Dados:`}
+                          : `${matchingProducts.length} produtos encontrados para "${fastCodeInput}" no Estoque:`}
                       </span>
                       <span className="text-[11px] text-emerald-700 block font-medium">
                         Clique no produto desejado para adicionar ao pedido:
@@ -1763,16 +1989,37 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                             </span>
                           )}
                           <div className="min-w-0 flex-1">
-                            <span className="font-bold text-slate-800 text-xs sm:text-sm group-hover:text-emerald-950 transition-colors block truncate">
-                              {p.name}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-800 text-xs sm:text-sm group-hover:text-emerald-950 transition-colors block truncate">
+                                {p.name}
+                              </span>
+                              {p.currentStock !== undefined && (
+                                <span
+                                  className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded-full shrink-0 border ${
+                                    p.currentStock <= 0
+                                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                      : p.currentStock <= 15
+                                      ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                      : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  }`}
+                                  title="Quantidade disponível em estoque"
+                                >
+                                  {p.currentStock <= 0 ? 'Esgotado' : `Estoque: ${p.currentStock} un`}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
 
                         <div className="flex items-center gap-2.5 shrink-0">
-                          <span className="font-mono font-black text-emerald-700 text-xs sm:text-sm">
-                            R$ {p.price.toFixed(2).replace('.', ',')}
-                          </span>
+                          <div className="text-right">
+                            <span className="text-[10px] text-slate-400 block font-semibold">
+                              {priceType === 'wholesale' ? 'Atacado' : 'Varejo'}
+                            </span>
+                            <span className="font-mono font-black text-emerald-700 text-xs sm:text-sm">
+                              R$ {p.price.toFixed(2).replace('.', ',')}
+                            </span>
+                          </div>
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1884,76 +2131,104 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             </div>
           )}
 
+          {/* Multi-item selection toolbar */}
+          {selectedItemIds.length > 0 && (
+            <div className="bg-rose-50 border-2 border-rose-200 rounded-2xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+                <span className="text-xs font-bold text-rose-950">
+                  {selectedItemIds.length} item(ns) selecionado(s) para exclusão
+                </span>
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={() => setSelectedItemIds([])}
+                  className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-800 font-semibold hover:bg-white rounded-lg transition-colors cursor-pointer"
+                >
+                  Desmarcar Todos
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteSelectedItems}
+                  className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Apagar {selectedItemIds.length} Selecionado(s)</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Line Items Table */}
           <div className="overflow-x-auto rounded-2xl border border-slate-200">
             <table className="w-full text-left text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  <th className="py-3 px-3 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={items.length > 0 && selectedItemIds.length === items.length}
+                      onChange={handleToggleSelectAll}
+                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 cursor-pointer"
+                      title="Selecionar todos os itens para apagar"
+                    />
+                  </th>
                   <th className="py-3 px-3 w-28">Código / SKU</th>
-                  <th className="py-3 px-3 min-w-[280px]">Descrição do Item / Produto</th>
+                  <th className="py-3 px-3 min-w-[260px]">Descrição do Item / Produto</th>
+                  <th className="py-3 px-3 w-32 text-center">Em Estoque</th>
                   <th className="py-3 px-3 w-36 text-center">Quantidade</th>
                   <th className="py-3 px-3 w-36 text-right">Preço Unit. ({company.currency || '$'})</th>
                   <th className="py-3 px-3 w-36 text-right">Subtotal</th>
-                  <th className="py-3 px-2 w-12 text-center"></th>
+                  <th className="py-3 px-2 w-14 text-center">Apagar</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-10 px-4 text-center">
+                    <td colSpan={8} className="py-10 px-4 text-center">
                       <div className="max-w-md mx-auto space-y-2">
                         <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
                           <Package className="w-5 h-5" />
                         </div>
                         <p className="text-xs font-bold text-slate-700">Nenhum produto adicionado ao pedido ainda</p>
                         <p className="text-[11px] text-slate-500">
-                          Digite o <strong>código</strong> ou o <strong>nome do produto</strong> na barra acima para adicionar automaticamente com preço do banco de dados, ou clique em <strong>"+ Adicionar Linha Manual"</strong> abaixo.
+                          Digite o <strong>código</strong> ou o <strong>nome do produto</strong> na barra acima para adicionar automaticamente com preço do estoque, ou clique em <strong>"+ Linha Manual"</strong> acima.
                         </p>
                       </div>
                     </td>
                   </tr>
                 ) : (
                   items.map((item, index) => (
-                  <tr key={item.id} className="hover:bg-indigo-50/20 transition-colors">
-                    {/* SKU Code */}
+                  <tr
+                    key={item.id}
+                    className={`transition-colors ${
+                      selectedItemIds.includes(item.id)
+                        ? 'bg-rose-50/60'
+                        : 'hover:bg-indigo-50/20'
+                    }`}
+                  >
+                    {/* Select Checkbox */}
+                    <td className="py-3 px-3 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedItemIds.includes(item.id)}
+                        onChange={() => handleToggleSelectItem(item.id)}
+                        className="w-4 h-4 rounded border-slate-300 text-indigo-600 cursor-pointer"
+                        title="Marcar item para exclusão"
+                      />
+                    </td>
+
+                    {/* SKU Code (Clean, no BD indicator) */}
                     <td className="py-3 px-3">
-                      <div className="space-y-1">
-                        <input
-                          type="text"
-                          value={item.code}
-                          onChange={(e) => handleUpdateItem(item.id, 'code', e.target.value)}
-                          placeholder={`#0${index + 1}`}
-                          className={`w-full border rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 ${
-                            lookupCatalogProduct(item.code)
-                              ? 'border-emerald-300 bg-emerald-50/60 text-emerald-950'
-                              : item.code.startsWith('#') || item.code.toUpperCase().startsWith('COD') || item.code.toUpperCase().startsWith('SKU')
-                              ? 'border-amber-300 bg-amber-50/60 text-amber-950'
-                              : 'border-slate-200 bg-slate-50/50 text-slate-800'
-                          }`}
-                        />
-                        {(() => {
-                          const inCatalog = lookupCatalogProduct(item.code);
-                          if (inCatalog) {
-                            return (
-                              <div
-                                className="flex items-center gap-1 text-[10px] text-emerald-700 font-bold"
-                                title={`No Banco de Dados: ${inCatalog.name} (R$ ${inCatalog.price.toFixed(2)})`}
-                              >
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-                                <span className="truncate">BD: R$ {inCatalog.price.toFixed(2).replace('.', ',')}</span>
-                              </div>
-                            );
-                          } else if (item.code) {
-                            return (
-                              <div className="flex items-center gap-1 text-[10px] text-slate-400 font-medium">
-                                <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
-                                <span>Manual</span>
-                              </div>
-                            );
-                          }
-                          return null;
-                        })()}
-                      </div>
+                      <input
+                        type="text"
+                        value={item.code}
+                        onChange={(e) => handleUpdateItem(item.id, 'code', e.target.value)}
+                        placeholder="Cód."
+                        className="w-full border border-slate-200 bg-slate-50/50 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-800"
+                        title="Código ou SKU do produto"
+                      />
                     </td>
 
                     {/* Description */}
@@ -1966,6 +2241,51 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                         placeholder="Nome ou descrição do item"
                         className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white"
                       />
+                    </td>
+
+                    {/* Em Estoque Column */}
+                    <td className="py-3 px-3 text-center whitespace-nowrap">
+                      {(() => {
+                        const st = getStockInfoForItem(item);
+                        if (!st) {
+                          return (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium text-slate-400 bg-slate-100" title="Item sem cadastro no estoque">
+                              -
+                            </span>
+                          );
+                        }
+                        const isOutOfStock = st.currentStock <= 0;
+                        const isLowStock = st.minStock !== undefined && st.currentStock <= st.minStock;
+                        const isOverRequested = item.quantity > st.currentStock;
+
+                        return (
+                          <div className="flex flex-col items-center justify-center gap-0.5">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold border ${
+                                isOutOfStock
+                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                  : isLowStock
+                                  ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                  : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              }`}
+                              title={`Disponível no Estoque: ${st.currentStock} ${st.unit || 'un'}${st.minStock ? ` (Mínimo: ${st.minStock})` : ''}`}
+                            >
+                              <Boxes className="w-3 h-3 shrink-0" />
+                              <span>{st.currentStock} {st.unit || 'un'}</span>
+                            </span>
+                            {isOverRequested && !isOutOfStock && (
+                              <span className="text-[10px] text-rose-600 font-bold" title="Quantidade solicitada é maior que o saldo atual no estoque!">
+                                Qtd &gt; Estoque
+                              </span>
+                            )}
+                            {isOutOfStock && (
+                              <span className="text-[10px] text-rose-600 font-bold">
+                                Esgotado
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     {/* Quantity with [-] / [+] Steppers and Direct Input */}
@@ -2027,11 +2347,15 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                     <td className="py-3 px-2 text-center">
                       <button
                         type="button"
-                        onClick={() => handleRemoveItem(item.id)}
-                        className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
-                        title="Remover linha"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveItem(item.id);
+                        }}
+                        className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-100 active:bg-rose-200 rounded-xl transition-all cursor-pointer inline-flex items-center justify-center min-w-[34px] min-h-[34px] border border-rose-200 hover:border-rose-300 shadow-2xs"
+                        title="Apagar este item da lista"
+                        aria-label="Apagar este item"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-4 h-4 text-rose-600" />
                       </button>
                     </td>
                   </tr>
@@ -2573,7 +2897,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                     Lançar Códigos em Massa
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Busca automática no Banco de Dados ({catalog.length} produtos)
+                    Busca automática no Estoque ({activeStock.length} produtos)
                   </p>
                 </div>
               </div>
@@ -2645,6 +2969,41 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                   <span>Inserir no Pedido</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação para Limpar Tabela */}
+      {isClearConfirmOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1">
+              <h3 className="text-base font-bold text-slate-900">
+                Apagar todos os itens do pedido?
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Você está prestes a remover <strong>{items.length} produto(s)</strong> desta lista. Esta ação limpará a tabela do pedido atual para que você possa começar do zero.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsClearConfirmOpen(false)}
+                className="flex-1 py-2.5 px-4 border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmClearAll}
+                className="flex-1 py-2.5 px-4 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer"
+              >
+                Sim, Limpar Tabela
+              </button>
             </div>
           </div>
         </div>

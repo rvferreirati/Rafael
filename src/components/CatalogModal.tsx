@@ -54,6 +54,8 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
   const [previewItems, setPreviewItems] = useState<CatalogProduct[] | null>(null);
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isClearAllConfirmOpen, setIsClearAllConfirmOpen] = useState(false);
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
   const handleManualSync = async () => {
     setIsSyncing(true);
@@ -187,23 +189,29 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
   };
 
   // Delete ALL items completely
-  const handleClearAll = async () => {
-    if (confirm(`Atenção: Deseja realmente apagar TODOS os ${catalog.length} produtos do Banco de Dados?`)) {
-      onUpdateCatalog([]);
-      await pushServerCatalog([]);
-      setFeedback('Todos os produtos foram apagados do banco de dados!');
-      setTimeout(() => setFeedback(null), 3000);
-    }
+  const handleClearAll = () => {
+    setIsClearAllConfirmOpen(true);
+  };
+
+  const confirmClearAll = async () => {
+    onUpdateCatalog([]);
+    await pushServerCatalog([]);
+    setIsClearAllConfirmOpen(false);
+    setFeedback('Todos os produtos foram apagados do banco de dados!');
+    setTimeout(() => setFeedback(null), 3000);
   };
 
   // Reset to the default catalog
-  const handleResetDefault = async () => {
-    if (confirm('Restaurar o banco de dados oficial completo (63 produtos)?')) {
-      const restored = await resetServerCatalog();
-      onUpdateCatalog(restored);
-      setFeedback('Banco de dados restaurado com os 63 produtos completos e sincronizado!');
-      setTimeout(() => setFeedback(null), 3000);
-    }
+  const handleResetDefault = () => {
+    setIsResetConfirmOpen(true);
+  };
+
+  const confirmResetDefault = async () => {
+    const restored = await resetServerCatalog();
+    onUpdateCatalog(restored);
+    setIsResetConfirmOpen(false);
+    setFeedback('Banco de dados restaurado com os 63 produtos completos e sincronizado!');
+    setTimeout(() => setFeedback(null), 3000);
   };
 
   // --- Step 1: Parse and show PRE-LISTA (Preview) ---
@@ -300,8 +308,9 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[92vh]">
+    <>
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+        <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="px-6 py-4.5 border-b border-slate-200 flex items-center justify-between bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shrink-0">
           <div className="flex items-center gap-3">
@@ -874,5 +883,76 @@ export const CatalogModal: React.FC<CatalogModalProps> = ({
         </div>
       </div>
     </div>
+
+      {/* Modal: Confirmar Apagar Todos os Produtos */}
+      {isClearAllConfirmOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1">
+              <h3 className="text-base font-bold text-slate-900">
+                Apagar TODOS os produtos do banco de dados?
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Você está prestes a remover todos os <strong>{catalog.length} produtos</strong> cadastrados. Esta ação apagará a lista no computador e celular.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsClearAllConfirmOpen(false)}
+                className="flex-1 py-2.5 px-4 border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmClearAll}
+                className="flex-1 py-2.5 px-4 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer"
+              >
+                Sim, Apagar Tudo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirmar Restaurar Banco Oficial */}
+      {isResetConfirmOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center mx-auto">
+              <RefreshCw className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1">
+              <h3 className="text-base font-bold text-slate-900">
+                Restaurar catálogo oficial (63 produtos)?
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Esta ação recarregará os 63 produtos originais com seus códigos e valores padrão de atacado/varejo.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsResetConfirmOpen(false)}
+                className="flex-1 py-2.5 px-4 border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmResetDefault}
+                className="flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer"
+              >
+                Sim, Restaurar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Header, TabType } from './components/Header';
 import { CreateOrderTab } from './components/CreateOrderTab';
+import { StockTab } from './components/StockTab';
 import { CustomersTab } from './components/CustomersTab';
 import { HistoryTab } from './components/HistoryTab';
 import { SettingsTab } from './components/SettingsTab';
@@ -8,7 +9,7 @@ import { QuickStartModal } from './components/QuickStartModal';
 import { CatalogModal } from './components/CatalogModal';
 import { SyncModal } from './components/SyncModal';
 import { LoginScreen } from './components/LoginScreen';
-import { Customer, SalesOrder, CompanyProfile } from './types';
+import { Customer, SalesOrder, CompanyProfile, StockItem } from './types';
 import {
   CatalogProduct,
   DEFAULT_CATALOG,
@@ -19,6 +20,14 @@ import {
   syncCatalogWithServer,
   mergeCatalogProducts
 } from './utils/productCatalog';
+import {
+  loadStoredStock,
+  saveStoredStock,
+  fetchServerStock,
+  pushServerStock,
+  deductStockForOrder,
+  restoreStockForOrder,
+} from './utils/stockManager';
 import { HelpCircle, Sparkles } from 'lucide-react';
 
 const STORAGE_KEYS = {
@@ -114,6 +123,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('create-order');
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [catalog, setCatalog] = useState<CatalogProduct[]>(loadStoredCatalog);
+  const [stockList, setStockList] = useState<StockItem[]>(loadStoredStock);
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -131,10 +141,16 @@ export default function App() {
       saveStoredCatalog(merged);
     }
 
-    // On load and window focus, update catalog from server
+    // On load and window focus, update catalog and stock from server
     fetchServerCatalog().then((serverCat) => {
       if (serverCat && serverCat.length > 0) {
         setCatalog(serverCat);
+      }
+    });
+
+    fetchServerStock().then((serverStock) => {
+      if (serverStock && serverStock.length > 0) {
+        setStockList(serverStock);
       }
     });
 
@@ -142,6 +158,11 @@ export default function App() {
       fetchServerCatalog().then((serverCat) => {
         if (serverCat && serverCat.length > 0) {
           setCatalog(serverCat);
+        }
+      });
+      fetchServerStock().then((serverStock) => {
+        if (serverStock && serverStock.length > 0) {
+          setStockList(serverStock);
         }
       });
     };
@@ -152,6 +173,12 @@ export default function App() {
   const handleUpdateCatalog = (newCatalog: CatalogProduct[]) => {
     setCatalog(newCatalog);
     pushServerCatalog(newCatalog);
+  };
+
+  const handleUpdateStock = (newStock: StockItem[]) => {
+    setStockList(newStock);
+    saveStoredStock(newStock);
+    pushServerStock(newStock);
   };
 
   // Persistence
@@ -207,16 +234,49 @@ export default function App() {
     }
   }, [company]);
 
-  // Order Handlers
+  // Order Handlers with Stock Automation (Baixa no estoque & Estorno no cancelamento)
   const handleSaveOrder = (newOrder: SalesOrder) => {
+    // 1. Baixa no estoque para os itens do pedido
+    const result = deductStockForOrder(newOrder, stockList);
+    if (result.success) {
+      setStockList(result.updatedStock);
+      newOrder.stockDeducted = true;
+    }
     setOrders((prev) => [newOrder, ...prev]);
   };
 
   const handleDeleteOrder = (id: string) => {
+    const orderToDelete = orders.find((o) => o.id === id);
+    if (orderToDelete && orderToDelete.status !== 'cancelled') {
+      // Se excluído sem ter sido cancelado antes, estorna o estoque
+      const result = restoreStockForOrder(orderToDelete, stockList);
+      if (result.success) {
+        setStockList(result.updatedStock);
+      }
+    }
     setOrders((prev) => prev.filter((o) => o.id !== id));
   };
 
   const handleUpdateOrder = (updatedOrder: SalesOrder) => {
+    const previousOrder = orders.find((o) => o.id === updatedOrder.id);
+
+    // Quando cancelar um pedido, volta o saldo para em estoque!
+    if (updatedOrder.status === 'cancelled' && previousOrder?.status !== 'cancelled') {
+      const result = restoreStockForOrder(updatedOrder, stockList);
+      if (result.success) {
+        setStockList(result.updatedStock);
+        updatedOrder.stockDeducted = false;
+      }
+    }
+    // Quando reativar um pedido cancelado, refaz a baixa do estoque!
+    else if (updatedOrder.status !== 'cancelled' && previousOrder?.status === 'cancelled') {
+      const result = deductStockForOrder(updatedOrder, stockList);
+      if (result.success) {
+        setStockList(result.updatedStock);
+        updatedOrder.stockDeducted = true;
+      }
+    }
+
     setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
   };
 
@@ -277,6 +337,7 @@ export default function App() {
         onSyncCatalog={handleOpenSyncModal}
         isSyncing={isSyncing}
         catalogCount={catalog.length}
+        stockCount={stockList.length}
         ordersCount={orders.length}
         customersCount={customers.length}
         currentUser={currentUser}
@@ -295,6 +356,16 @@ export default function App() {
             onUpdateCatalog={handleUpdateCatalog}
             onSyncCatalog={handleOpenSyncModal}
             isSyncing={isSyncing}
+            stockList={stockList}
+            onUpdateStock={handleUpdateStock}
+          />
+        )}
+
+        {activeTab === 'stock' && (
+          <StockTab
+            stockList={stockList}
+            onUpdateStock={handleUpdateStock}
+            company={company}
           />
         )}
 

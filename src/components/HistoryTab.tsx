@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, Download, Trash2, Search, Calendar, DollarSign, Package, Send, Edit3 } from 'lucide-react';
+import { FileText, Download, Trash2, Search, Calendar, DollarSign, Package, Send, Edit3, XCircle, RotateCcw, CheckCircle2 } from 'lucide-react';
 import { SalesOrder, CompanyProfile } from '../types';
 import { generateSalesOrderPDF } from '../utils/pdfGenerator';
 import { SendOrderModal } from './SendOrderModal';
@@ -14,11 +14,14 @@ interface HistoryTabProps {
 
 export const HistoryTab: React.FC<HistoryTabProps> = ({ orders, company, onDeleteOrder, onUpdateOrder }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'confirmed' | 'draft' | 'delivered'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'confirmed' | 'draft' | 'delivered' | 'cancelled'>('all');
   const [selectedOrderToSend, setSelectedOrderToSend] = useState<SalesOrder | null>(null);
   const [isSendOpen, setIsSendOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<SalesOrder | null>(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [orderToCancel, setOrderToCancel] = useState<SalesOrder | null>(null);
+  const [orderToReactivate, setOrderToReactivate] = useState<SalesOrder | null>(null);
+  const [orderToDelete, setOrderToDelete] = useState<SalesOrder | null>(null);
 
   const filtered = orders.filter((o) => {
     const matchesSearch =
@@ -29,11 +32,46 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ orders, company, onDelet
     return matchesSearch && matchesStatus;
   });
 
-  const totalRevenue = orders.reduce((acc, curr) => acc + (curr.grandTotal || 0), 0);
+  const totalRevenue = orders
+    .filter((o) => o.status !== 'cancelled')
+    .reduce((acc, curr) => acc + (curr.grandTotal || 0), 0);
   const avgOrder = orders.length > 0 ? totalRevenue / orders.length : 0;
 
   const handleDownloadPDF = (order: SalesOrder) => {
     generateSalesOrderPDF(order, company, true);
+  };
+
+  const handleToggleCancelOrder = (order: SalesOrder) => {
+    if (!onUpdateOrder) return;
+    if (order.status !== 'cancelled') {
+      setOrderToCancel(order);
+    } else {
+      setOrderToReactivate(order);
+    }
+  };
+
+  const confirmCancelOrder = () => {
+    if (!orderToCancel || !onUpdateOrder) return;
+    onUpdateOrder({
+      ...orderToCancel,
+      status: 'cancelled',
+    });
+    setOrderToCancel(null);
+  };
+
+  const confirmReactivateOrder = () => {
+    if (!orderToReactivate || !onUpdateOrder) return;
+    onUpdateOrder({
+      ...orderToReactivate,
+      status: 'confirmed',
+    });
+    setOrderToReactivate(null);
+  };
+
+  const confirmDeleteOrder = () => {
+    if (!orderToDelete) return;
+    onDeleteOrder(orderToDelete.id);
+    setOrderToDelete(null);
   };
 
   const getStatusBadge = (status: SalesOrder['status']) => {
@@ -54,6 +92,12 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ orders, company, onDelet
         return (
           <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
             Entregue
+          </span>
+        );
+      case 'cancelled':
+        return (
+          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200" title="Saldo estornado para o estoque">
+            Cancelado (Estornado)
           </span>
         );
       default:
@@ -136,6 +180,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ orders, company, onDelet
             <option value="confirmed">Confirmados</option>
             <option value="draft">Rascunhos</option>
             <option value="delivered">Entregues</option>
+            <option value="cancelled">Cancelados (Estornados)</option>
           </select>
         </div>
       </div>
@@ -200,6 +245,29 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ orders, company, onDelet
                         <Edit3 className="w-3.5 h-3.5" />
                         <span>Editar</span>
                       </button>
+
+                      {order.status !== 'cancelled' ? (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleCancelOrder(order)}
+                          className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold rounded-lg inline-flex items-center gap-1 transition-colors border border-rose-200 cursor-pointer"
+                          title="Cancelar pedido e voltar produtos para o estoque"
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                          <span>Cancelar</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleCancelOrder(order)}
+                          className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold rounded-lg inline-flex items-center gap-1 transition-colors border border-emerald-300 cursor-pointer"
+                          title="Reativar pedido e baixar estoque novamente"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reativar</span>
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => {
@@ -223,12 +291,8 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ orders, company, onDelet
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          if (confirm(`Excluir o registro do pedido ${order.orderNumber}?`)) {
-                            onDeleteOrder(order.id);
-                          }
-                        }}
-                        className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors"
+                        onClick={() => setOrderToDelete(order)}
+                        className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
                         title="Excluir pedido"
                       >
                         <Trash2 className="w-3.5 h-3.5 inline" />
@@ -270,6 +334,111 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ orders, company, onDelet
         order={selectedOrderToSend}
         company={company}
       />
+
+      {/* Modal de Confirmação de Cancelamento de Pedido */}
+      {orderToCancel && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <RotateCcw className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1">
+              <h3 className="text-base font-bold text-slate-900">
+                Cancelar pedido {orderToCancel.orderNumber}?
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Ao cancelar, os itens do pedido serão estornados e as quantidades voltarão automaticamente ao saldo de estoque.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setOrderToCancel(null)}
+                className="flex-1 py-2.5 px-4 border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={confirmCancelOrder}
+                className="flex-1 py-2.5 px-4 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer"
+              >
+                Sim, Cancelar Pedido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Reativação de Pedido */}
+      {orderToReactivate && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1">
+              <h3 className="text-base font-bold text-slate-900">
+                Reativar pedido {orderToReactivate.orderNumber}?
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                O pedido voltará ao status "Confirmado" e os itens darão baixa novamente no estoque.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setOrderToReactivate(null)}
+                className="flex-1 py-2.5 px-4 border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={confirmReactivateOrder}
+                className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer"
+              >
+                Sim, Reativar Pedido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Exclusão Definitiva de Pedido */}
+      {orderToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1">
+              <h3 className="text-base font-bold text-slate-900">
+                Excluir pedido {orderToDelete.orderNumber}?
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                O registro do pedido será excluído do histórico. Se o pedido estava ativo, seus itens retornarão ao estoque.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setOrderToDelete(null)}
+                className="flex-1 py-2.5 px-4 border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteOrder}
+                className="flex-1 py-2.5 px-4 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer"
+              >
+                Sim, Excluir Pedido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

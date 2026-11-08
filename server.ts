@@ -126,6 +126,85 @@ app.post('/api/catalog', (req, res) => {
   }
 });
 
+// Centralized Stock File for real-time inventory control
+const STOCK_FILE_PATH = path.join(path.resolve(), 'data', 'stock.json');
+
+function readServerStock(): any[] {
+  try {
+    if (fs.existsSync(STOCK_FILE_PATH)) {
+      const data = fs.readFileSync(STOCK_FILE_PATH, 'utf-8');
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && Array.isArray(parsed.stock)) return parsed.stock;
+    }
+  } catch (err) {
+    console.warn('Erro ao ler data/stock.json:', err);
+  }
+  // Initialize from catalog if not exists
+  const serverCatalog = readServerCatalog();
+  const initialStock = serverCatalog.map((p: any, idx: number) => {
+    const basePrice = Number(p.price) || 0;
+    return {
+      id: p.id || `stock-${p.code || 'item'}-${idx}`,
+      code: p.code && p.code !== '-' ? p.code : '',
+      name: p.name || '',
+      currentStock: 100,
+      minStock: 15,
+      costPrice: Math.round(basePrice * 0.6 * 100) / 100,
+      wholesalePrice: Math.round(basePrice * 0.88 * 100) / 100,
+      retailPrice: Math.round(basePrice * 100) / 100,
+      category: (p.name || '').toLowerCase().includes('lixa')
+        ? 'Lixas'
+        : (p.name || '').toLowerCase().includes('bloco')
+        ? 'Polidores'
+        : (p.name || '').toLowerCase().includes('cílios') || (p.name || '').toLowerCase().includes('cilios')
+        ? 'Cílios'
+        : 'Geral',
+      unit: 'un',
+      updatedAt: Date.now(),
+    };
+  });
+  writeServerStock(initialStock, 'inicialização');
+  return initialStock;
+}
+
+function writeServerStock(stock: any[], deviceName: string = 'dispositivo'): boolean {
+  try {
+    fs.mkdirSync(path.dirname(STOCK_FILE_PATH), { recursive: true });
+    const payload = {
+      updatedAt: Date.now(),
+      updatedBy: deviceName,
+      stock,
+    };
+    fs.writeFileSync(STOCK_FILE_PATH, JSON.stringify(payload, null, 2), 'utf-8');
+    return true;
+  } catch (err) {
+    console.error('Erro ao escrever data/stock.json:', err);
+    return false;
+  }
+}
+
+// API Route: Get shared stock
+app.get('/api/stock', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  const stock = readServerStock();
+  return res.json({ stock, count: stock.length });
+});
+
+// API Route: Update shared stock
+app.post('/api/stock', (req, res) => {
+  const { stock, device } = req.body;
+  if (!Array.isArray(stock)) {
+    return res.status(400).json({ error: 'Estoque deve ser um array.' });
+  }
+  const ok = writeServerStock(stock, device || 'dispositivo');
+  if (ok) {
+    return res.json({ success: true, count: stock.length, stock });
+  } else {
+    return res.status(500).json({ error: 'Falha ao salvar estoque no servidor.' });
+  }
+});
+
 // API Route: Reset shared catalog to initial defaults
 app.post('/api/catalog/reset', (req, res) => {
   const ok = writeServerCatalog(INITIAL_CATALOG, 'restauração padrão');

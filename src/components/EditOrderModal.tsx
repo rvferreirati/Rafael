@@ -266,7 +266,13 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
                   <option value="confirmed">Confirmado</option>
                   <option value="draft">Rascunho</option>
                   <option value="delivered">Entregue</option>
+                  <option value="cancelled">Cancelado (Estornar Estoque)</option>
                 </select>
+                {status === 'cancelled' && (
+                  <span className="block text-[10px] text-rose-600 font-bold mt-0.5">
+                    * Saldo voltará ao estoque
+                  </span>
+                )}
               </div>
             </div>
 

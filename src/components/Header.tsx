@@ -1,7 +1,7 @@
 import React from 'react';
-import { FileSpreadsheet, Users, History, Building2, HelpCircle, FileCheck2, Database, LogOut, User, RefreshCw } from 'lucide-react';
+import { FileSpreadsheet, Users, History, Building2, HelpCircle, FileCheck2, Database, LogOut, User, RefreshCw, Boxes } from 'lucide-react';
 
-export type TabType = 'create-order' | 'customers' | 'history' | 'settings';
+export type TabType = 'create-order' | 'stock' | 'customers' | 'history' | 'settings';
 
 interface HeaderProps {
   activeTab: TabType;
@@ -12,6 +12,7 @@ interface HeaderProps {
   isSyncing?: boolean;
   ordersCount: number;
   customersCount: number;
+  stockCount?: number;
   catalogCount?: number;
   currentUser?: { username: string; name: string } | null;
   onLogout?: () => void;
@@ -26,6 +27,7 @@ export const Header: React.FC<HeaderProps> = ({
   isSyncing,
   ordersCount,
   customersCount,
+  stockCount,
   catalogCount,
   currentUser,
   onLogout,
@@ -42,35 +44,52 @@ export const Header: React.FC<HeaderProps> = ({
               className="h-8 sm:h-9 w-auto object-contain"
             />
             <span className="hidden sm:inline-block ml-1 text-[11px] font-bold bg-slate-100 text-slate-800 px-2.5 py-0.5 rounded-full border border-slate-200">
-              Pedidos & OCR
+              Pedidos & Estoque
             </span>
           </div>
 
           {/* Navigation Tabs */}
-          <nav className="flex space-x-1 sm:space-x-3 text-sm font-medium">
+          <nav className="flex space-x-1 sm:space-x-2 text-sm font-medium">
             <button
               onClick={() => onTabChange('create-order')}
-              className={`py-2 px-3 sm:px-4 rounded-lg flex items-center gap-2 transition-all ${
+              className={`py-2 px-2.5 sm:px-3.5 rounded-lg flex items-center gap-1.5 transition-all ${
                 activeTab === 'create-order'
                   ? 'bg-indigo-50 text-indigo-700 font-semibold shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span className="hidden sm:inline">Novo Pedido & OCR</span>
-              <span className="sm:hidden">Novo</span>
+              <FileSpreadsheet className="w-4 h-4 text-indigo-600" />
+              <span className="hidden md:inline">Novo Pedido & OCR</span>
+              <span className="md:hidden">Pedido</span>
+            </button>
+
+            <button
+              onClick={() => onTabChange('stock')}
+              className={`py-2 px-2.5 sm:px-3.5 rounded-lg flex items-center gap-1.5 transition-all ${
+                activeTab === 'stock'
+                  ? 'bg-emerald-50 text-emerald-800 font-semibold shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              <Boxes className="w-4 h-4 text-emerald-600" />
+              <span>Estoque</span>
+              {stockCount !== undefined && (
+                <span className="text-[11px] font-mono bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full font-bold">
+                  {stockCount}
+                </span>
+              )}
             </button>
 
             <button
               onClick={() => onTabChange('customers')}
-              className={`py-2 px-3 sm:px-4 rounded-lg flex items-center gap-2 transition-all ${
+              className={`py-2 px-2.5 sm:px-3.5 rounded-lg flex items-center gap-1.5 transition-all ${
                 activeTab === 'customers'
                   ? 'bg-indigo-50 text-indigo-700 font-semibold shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
               <Users className="w-4 h-4" />
-              <span className="hidden sm:inline">Clientes</span>
+              <span className="hidden md:inline">Clientes</span>
               <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">
                 {customersCount}
               </span>
@@ -78,14 +97,14 @@ export const Header: React.FC<HeaderProps> = ({
 
             <button
               onClick={() => onTabChange('history')}
-              className={`py-2 px-3 sm:px-4 rounded-lg flex items-center gap-2 transition-all ${
+              className={`py-2 px-2.5 sm:px-3.5 rounded-lg flex items-center gap-1.5 transition-all ${
                 activeTab === 'history'
                   ? 'bg-indigo-50 text-indigo-700 font-semibold shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
               <History className="w-4 h-4" />
-              <span className="hidden sm:inline">Histórico</span>
+              <span className="hidden md:inline">Histórico</span>
               <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">
                 {ordersCount}
               </span>
@@ -93,7 +112,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             <button
               onClick={() => onTabChange('settings')}
-              className={`py-2 px-3 sm:px-4 rounded-lg flex items-center gap-2 transition-all ${
+              className={`py-2 px-2.5 sm:px-3.5 rounded-lg flex items-center gap-1.5 transition-all ${
                 activeTab === 'settings'
                   ? 'bg-indigo-50 text-indigo-700 font-semibold shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -104,21 +123,8 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </nav>
 
-          {/* Quick Actions (Database & Help Guide) */}
+          {/* Quick Actions (Sync & Help Guide) */}
           <div className="flex items-center space-x-2">
-            {onOpenCatalog && (
-              <button
-                onClick={onOpenCatalog}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg transition-all shadow-xs cursor-pointer"
-                title="Visualizar e gerenciar Banco de Dados de Produtos"
-              >
-                <Database className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="hidden sm:inline">Banco de Dados</span>
-                <span className="text-[10px] bg-emerald-200 text-emerald-900 font-bold px-1.5 py-0.5 rounded-full">
-                  {catalogCount ?? 12}
-                </span>
-              </button>
-            )}
             {onSyncCatalog && (
               <button
                 type="button"

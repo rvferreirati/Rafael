@@ -1,372 +1,372 @@
 [
   {
-    "code": "47",
+    "code": "9200047",
     "name": "Bloco Polidor",
     "price": 3
   },
   {
-    "code": "46",
+    "code": "9200046",
     "name": "Lixa mini canário Pura Arte com 100",
     "price": 7.7
   },
   {
-    "code": "10",
+    "code": "9200010",
     "name": "Lixa moeda preta podóloga grão 100 com 24 unidades",
     "price": 6.93
   },
   {
-    "code": "12",
+    "code": "9200012",
     "name": "Lixa mini parda Pop c/100",
     "price": 5.3
   },
   {
     "id": "cat-14",
-    "code": "14",
+    "code": "9200014",
     "name": "Algodão bola 95 g",
     "price": 5
   },
   {
-    "code": "23",
+    "code": "9200023",
     "name": "Lixa Plantar gr 150 c/100 un",
     "price": 19
   },
   {
-    "code": "22",
+    "code": "9200022",
     "name": "Lixa Plantar gr 120 c/un",
     "price": 19
   },
   {
     "id": "cat-56",
-    "code": "56",
+    "code": "9200056",
     "name": "Protetor de bacia pedicure com 50 unidades",
     "price": 11.5
   },
   {
     "id": "cat-66",
-    "code": "66",
+    "code": "9200066",
     "name": "Touca plástica descartável com...",
     "price": 8.51
   },
   {
     "id": "cat-17",
-    "code": "17",
+    "code": "9200017",
     "name": "Cílios Mix 8 a 14",
     "price": 30
   },
   {
     "id": "cat-90",
-    "code": "90",
+    "code": "9200090",
     "name": "Cílios Magina D-lash Naturals Knot-free flares 10 mm",
     "price": 12
   },
   {
     "id": "cat-34",
-    "code": "34",
+    "code": "9200034",
     "name": "Cílios Postiços 7P-C 14mm",
     "price": 11
   },
   {
     "id": "cat-secante",
-    "code": "-",
+    "code": "92000501",
     "name": "Secante rápido não oleoso com11 ml",
     "price": 6.9
   },
   {
     "id": "cat-boneca",
-    "code": "-",
+    "code": "92000502",
     "name": "Colorama Boneca",
     "price": 5.9
   },
   {
     "id": "cat-bastao",
-    "code": "-",
+    "code": "92000503",
     "name": "Bastão Inox c/ silicone ,Isis",
     "price": 7.07
   },
   {
     "id": "cat-palito",
-    "code": "-",
+    "code": "92000504",
     "name": "Palito para depilação com 100 unidades",
     "price": 7.5
   },
   {
     "id": "cat-41-1793386889774",
-    "code": "41",
+    "code": "9200041",
     "name": "Bloco Polidor Honey Rosa",
     "price": 3
   },
   {
     "id": "cat-nocode-2-1793386889775",
-    "code": "-",
+    "code": "92000505",
     "name": "Lixa mini Rosa Pura Arte Pop c/100 unidades",
     "price": 6.6
   },
   {
     "id": "cat-nocode-3-1793386889775",
-    "code": "-",
+    "code": "92000506",
     "name": "Mini lixa buffer",
     "price": 1.89
   },
   {
     "id": "cat-nocode-4-1793386889775",
-    "code": "-",
+    "code": "92000507",
     "name": "Lixa Marrom Madeira Honey Girl",
     "price": 1.9
   },
   {
     "id": "cat-42-1793386889775",
-    "code": "42",
+    "code": "9200042",
     "name": "Bloco polidor Honey Girl branca",
     "price": 3
   },
   {
     "id": "cat-nocode-6-1793386889775",
-    "code": "-",
+    "code": "92000508",
     "name": "Mini Bloco polidor c/10 unidades",
     "price": 6
   },
   {
     "id": "cat-nocode-7-1793386889775",
-    "code": "-",
+    "code": "92000509",
     "name": "Lady Misty",
     "price": 14
   },
   {
     "id": "cat-nocode-8-1793386889775",
-    "code": "-",
+    "code": "92000510",
     "name": "Lixa Banana X & D com 12 unidades",
     "price": 22.5
   },
   {
     "id": "cat-24-1793386889775",
-    "code": "24",
+    "code": "9200024",
     "name": "Lixa Plantar gr 220 c/100un",
     "price": 19
   },
   {
     "id": "cat-346-1793386889775",
-    "code": "346",
+    "code": "92000346",
     "name": "Lixa Lâminar gr 120 c/100 un",
     "price": 19
   },
   {
     "id": "cat-20-1793386889775",
-    "code": "20",
+    "code": "9200020",
     "name": "Lixas Plantar gr 80 c/100",
     "price": 19
   },
   {
     "id": "cat-28-1793386889775",
-    "code": "28",
+    "code": "9200028",
     "name": "Lixas Laminar gr 220 com 100 unidades",
     "price": 19
   },
   {
     "id": "cat-44-1793386889775",
-    "code": "44",
+    "code": "9200044",
     "name": "Lixa pedicuro c/12 lixas",
     "price": 9.89
   },
   {
     "id": "cat-nocode-14-1793386889775",
-    "code": "-",
+    "code": "92000511",
     "name": "Lixa boomerang Apolinário",
     "price": 2.8
   },
   {
-    "code": "8",
+    "code": "920008",
     "name": "Secante rápido não oleoso com 11 ml",
     "price": 6.9
   },
   {
     "id": "cat-nocode-16-1793386889775",
-    "code": "-",
+    "code": "92000512",
     "name": "Lixa boomerang Honey Girl",
     "price": 2.4
   },
   {
     "id": "cat-nocode-17-1793386889775",
-    "code": "-",
+    "code": "92000513",
     "name": "Suporte Lâminar",
     "price": 19
   },
   {
     "id": "cat-nocode-18-1793386889775",
-    "code": "-",
+    "code": "92000514",
     "name": "Lixa para gel boomerang",
     "price": 2.5
   },
   {
     "id": "cat-15-1793386889775",
-    "code": "15",
+    "code": "9200015",
     "name": "Lixa mini parda Pura Arte c/100 unidades",
     "price": 6.9
   },
   {
     "id": "cat-11-1793386889775",
-    "code": "11",
+    "code": "9200011",
     "name": "Lixa moeda amarela podóloga grão 80 com 24 unidades",
     "price": 8.4
   },
   {
     "id": "cat-nocode-26-1793386889775",
-    "code": "-",
+    "code": "92000515",
     "name": "Lixa média Canário Pura Arte com 100 unidades",
     "price": 9.79
   },
   {
     "id": "cat-nocode-27-1793386889775",
-    "code": "-",
+    "code": "92000516",
     "name": "Anel de lixa com 50 unidades",
     "price": 6.5
   },
   {
     "id": "cat-nocode-28-1793386889775",
-    "code": "-",
+    "code": "92000517",
     "name": "Lixa Polidora buffer",
     "price": 3
   },
   {
     "id": "cat-18-1793386889775",
-    "code": "18",
+    "code": "9200018",
     "name": "Lixa parda Tradicional Pura Arte com 100 unidades",
     "price": 12.5
   },
   {
     "id": "cat-nocode-30-1793386889775",
-    "code": "-",
+    "code": "92000518",
     "name": "Lixa parda média Pura Arte com 100 unidades",
     "price": 8.74
   },
   {
     "id": "cat-nocode-31-1793386889775",
-    "code": "-",
+    "code": "92000519",
     "name": "Suporte Plantar",
     "price": 18
   },
   {
     "id": "cat-308-1793386889775",
-    "code": "308",
+    "code": "92000308",
     "name": "Lixa refil preta grão 100 com 50",
     "price": 18.8
   },
   {
     "id": "cat-319-1793386889776",
-    "code": "319",
+    "code": "92000319",
     "name": "Bloco polidor Santa Clara",
     "price": 7.99
   },
   {
     "id": "cat-29-1793386889776",
-    "code": "29",
+    "code": "9200029",
     "name": "Lixa Lâminar gr 320 c/100 un",
     "price": 19
   },
   {
     "id": "cat-27-1793386889776",
-    "code": "27",
+    "code": "9200027",
     "name": "Lixa Lâminar gr 100 c/100un",
     "price": 19
   },
   {
     "id": "cat-30-1793386889776",
-    "code": "30",
+    "code": "9200030",
     "name": "Lixa Lâminar gr 400 c/100 un",
     "price": 19
   },
   {
     "id": "cat-21-1793386889776",
-    "code": "21",
+    "code": "9200021",
     "name": "Lixa Plantar gr 100 c/100 un",
     "price": 19
   },
   {
     "id": "cat-26-1793386889776",
-    "code": "26",
+    "code": "9200026",
     "name": "Lixa Lâminar gr 80 c/100 un",
     "price": 19
   },
   {
     "id": "cat-237-1793386889777",
-    "code": "237",
+    "code": "92000237",
     "name": "Extra Brilho roxo 100 ml",
     "price": 14.4
   },
   {
     "id": "cat-235-1793386889777",
-    "code": "235",
+    "code": "92000235",
     "name": "Extra brilho incolor 100 ml",
     "price": 14.4
   },
   {
     "id": "cat-4-1793386889777",
-    "code": "4",
+    "code": "920004",
     "name": "Removedor à base de acetona de 900 ml",
     "price": 39.9
   },
   {
     "id": "cat-nocode-3-1793386889777",
-    "code": "-",
+    "code": "92000520",
     "name": "Recuperador de esmaltes 30 ml",
     "price": 8
   },
   {
     "id": "cat-357-1793386889777",
-    "code": "357",
+    "code": "92000357",
     "name": "Acetona 100 ml",
     "price": 4.5
   },
   {
     "id": "cat-5-1793386889777",
-    "code": "5",
+    "code": "920005",
     "name": "Removedor Acetona 500 ml",
     "price": 22
   },
   {
     "id": "cat-nocode-6-1793386889777",
-    "code": "-",
+    "code": "92000521",
     "name": "Removedor sem acetona 500 ml",
     "price": 22
   },
   {
     "id": "cat-6-1793386889777",
-    "code": "6",
+    "code": "920006",
     "name": "Tôp coat roxo, inimigo das bolinhas",
     "price": 6.9
   },
   {
     "id": "cat-7-1793386889777",
-    "code": "7",
+    "code": "920007",
     "name": "Top coat incolor inimigo das bolinhas",
     "price": 6.9
   },
   {
     "id": "cat-9-1793386889777",
-    "code": "9",
+    "code": "920009",
     "name": "Base 100 ml super fina, secagem rápida",
     "price": 14.4
   },
   {
     "id": "cat-nocode-11-1793386889777",
-    "code": "-",
+    "code": "92000522",
     "name": "Base Fosca",
     "price": 3
   },
   {
     "id": "cat-nocode-12-1793386889777",
-    "code": "-",
+    "code": "92000523",
     "name": "Base Bomba",
     "price": 12
   },
   {
     "id": "cat-algodao-prensado",
-    "code": "-",
+    "code": "92000524",
     "name": "Algodão prensado com 1000 unidades",
     "price": 13
   },
   {
     "id": "cat-rolo-algodao",
-    "code": "-",
+    "code": "92000525",
     "name": "Rolo de Algodão 500 g",
     "price": 20
   }
