@@ -29,6 +29,7 @@ import {
   importStockFromExcel,
   saveStoredStock,
   pushServerStock,
+  fetchServerStock,
   loadStoredStockMovements,
   saveStoredStockMovements,
 } from '../utils/stockManager';
@@ -344,11 +345,18 @@ export const StockTab: React.FC<StockTabProps> = ({
         // Merge with existing stock by code or name
         const merged = [...stockList];
         res.items.forEach((imp) => {
-          const idx = merged.findIndex(
-            (ex) =>
-              (ex.code && imp.code && ex.code.toLowerCase() === imp.code.toLowerCase()) ||
-              ex.name.toLowerCase() === imp.name.toLowerCase()
-          );
+          const idx = merged.findIndex((ex) => {
+            const exCode = (ex.code || '').replace(/^#/, '').toLowerCase().trim();
+            const impCode = (imp.code || '').replace(/^#/, '').toLowerCase().trim();
+            if (exCode && impCode) {
+              if (exCode === impCode) return true;
+              if (exCode.endsWith(impCode) || impCode.endsWith(exCode)) return true;
+            }
+            const exName = ex.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+            const impName = imp.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+            return exName === impName || (exName.length > 5 && impName.includes(exName)) || (impName.length > 5 && exName.includes(impName));
+          });
+
           if (idx >= 0) {
             merged[idx] = {
               ...merged[idx],
@@ -366,8 +374,12 @@ export const StockTab: React.FC<StockTabProps> = ({
 
         onUpdateStock(merged);
         saveStoredStock(merged);
-        pushServerStock(merged);
-        showFeedback(`✓ ${res.items.length} produtos importados/atualizados com sucesso da planilha!`);
+        const pushed = await pushServerStock(merged);
+        if (pushed) {
+          showFeedback(`✓ ${res.items.length} produtos importados e sincronizados com a nuvem (celular atualizado)!`);
+        } else {
+          showFeedback(`✓ ${res.items.length} produtos importados localmente.`);
+        }
       } else {
         showFeedback(res.message || 'Falha ao importar planilha.', 'error');
       }
@@ -376,6 +388,27 @@ export const StockTab: React.FC<StockTabProps> = ({
     } finally {
       setIsImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
+
+  const handleManualSyncStock = async () => {
+    setIsManualSyncing(true);
+    try {
+      const serverStock = await fetchServerStock();
+      if (serverStock && serverStock.length > 0) {
+        onUpdateStock(serverStock);
+        saveStoredStock(serverStock);
+        showFeedback(`✓ Estoque sincronizado! ${serverStock.length} produtos carregados da nuvem.`);
+      } else {
+        await pushServerStock(stockList);
+        showFeedback(`✓ Estoque atual (${stockList.length} itens) enviado para a nuvem!`);
+      }
+    } catch (e: any) {
+      showFeedback(`Erro ao sincronizar estoque: ${e?.message || 'Falha de rede'}`, 'error');
+    } finally {
+      setIsManualSyncing(false);
     }
   };
 

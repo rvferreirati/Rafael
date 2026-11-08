@@ -168,6 +168,35 @@ function readServerStock(): any[] {
   return initialStock;
 }
 
+interface StockStoreWrapper {
+  updatedAt: number;
+  updatedBy: string;
+  stock: any[];
+}
+
+function readServerStockMeta(): StockStoreWrapper {
+  try {
+    if (fs.existsSync(STOCK_FILE_PATH)) {
+      const data = fs.readFileSync(STOCK_FILE_PATH, 'utf-8');
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) {
+        const stat = fs.statSync(STOCK_FILE_PATH);
+        return { stock: parsed, updatedAt: stat.mtimeMs, updatedBy: 'sistema' };
+      } else if (parsed && Array.isArray(parsed.stock)) {
+        return {
+          stock: parsed.stock,
+          updatedAt: parsed.updatedAt || Date.now(),
+          updatedBy: parsed.updatedBy || 'dispositivo',
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao ler metadata de data/stock.json:', err);
+  }
+  const defaultStock = readServerStock();
+  return { stock: defaultStock, updatedAt: Date.now(), updatedBy: 'sistema' };
+}
+
 function writeServerStock(stock: any[], deviceName: string = 'dispositivo'): boolean {
   try {
     fs.mkdirSync(path.dirname(STOCK_FILE_PATH), { recursive: true });
@@ -184,14 +213,22 @@ function writeServerStock(stock: any[], deviceName: string = 'dispositivo'): boo
   }
 }
 
-// API Route: Get shared stock
+// API Route: Get shared stock (anti-cache headers for instant mobile sync)
 app.get('/api/stock', (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  const stock = readServerStock();
-  return res.json({ stock, count: stock.length });
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  const meta = readServerStockMeta();
+  return res.json({
+    stock: meta.stock,
+    count: meta.stock.length,
+    updatedAt: meta.updatedAt,
+    updatedBy: meta.updatedBy,
+  });
 });
 
-// API Route: Update shared stock
+// API Route: Update shared stock (synced across PC & Mobile)
 app.post('/api/stock', (req, res) => {
   const { stock, device } = req.body;
   if (!Array.isArray(stock)) {
@@ -199,10 +236,37 @@ app.post('/api/stock', (req, res) => {
   }
   const ok = writeServerStock(stock, device || 'dispositivo');
   if (ok) {
-    return res.json({ success: true, count: stock.length, stock });
+    const meta = readServerStockMeta();
+    return res.json({
+      success: true,
+      count: meta.stock.length,
+      stock: meta.stock,
+      updatedAt: meta.updatedAt,
+      updatedBy: meta.updatedBy,
+    });
   } else {
     return res.status(500).json({ error: 'Falha ao salvar estoque no servidor.' });
   }
+});
+
+// Combined API Route: Instant sync for both Catalog and Stock in a single call
+app.get('/api/sync/all', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  const catMeta = readServerCatalogMeta();
+  const stockMeta = readServerStockMeta();
+  return res.json({
+    catalog: catMeta.catalog,
+    catalogCount: catMeta.catalog.length,
+    catalogUpdatedAt: catMeta.updatedAt,
+    catalogUpdatedBy: catMeta.updatedBy,
+    stock: stockMeta.stock,
+    stockCount: stockMeta.stock.length,
+    stockUpdatedAt: stockMeta.updatedAt,
+    stockUpdatedBy: stockMeta.updatedBy,
+  });
 });
 
 // API Route: Reset shared catalog to initial defaults

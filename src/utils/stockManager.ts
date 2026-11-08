@@ -103,10 +103,23 @@ export const saveStoredStockMovements = (movements: StockMovement[]): void => {
   }
 };
 
-// Server synchronization helpers
+export interface ServerStockMeta {
+  stock: StockItem[];
+  count: number;
+  updatedAt?: number;
+  updatedBy?: string;
+}
+
+// Server synchronization helpers with anti-cache timestamp for instant mobile delivery
 export const fetchServerStock = async (): Promise<StockItem[] | null> => {
   try {
-    const res = await fetch('/api/stock', { cache: 'no-store' });
+    const res = await fetch(`/api/stock?t=${Date.now()}`, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+      },
+    });
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data.stock) && data.stock.length > 0) {
@@ -120,12 +133,45 @@ export const fetchServerStock = async (): Promise<StockItem[] | null> => {
   return null;
 };
 
+export const fetchServerStockMeta = async (): Promise<ServerStockMeta | null> => {
+  try {
+    const res = await fetch(`/api/stock?t=${Date.now()}`, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+      },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.stock)) {
+        return {
+          stock: data.stock,
+          count: data.stock.length,
+          updatedAt: data.updatedAt,
+          updatedBy: data.updatedBy,
+        };
+      }
+    }
+  } catch (err) {
+    // offline
+  }
+  return null;
+};
+
 export const pushServerStock = async (stock: StockItem[]): Promise<boolean> => {
   try {
-    const res = await fetch('/api/stock', {
+    const res = await fetch(`/api/stock?t=${Date.now()}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stock, device: navigator.userAgent.includes('Mobile') ? 'celular' : 'computador' }),
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+      },
+      body: JSON.stringify({
+        stock,
+        device: typeof navigator !== 'undefined' && /Mobile|Android|iPhone/i.test(navigator.userAgent) ? 'celular' : 'computador',
+      }),
     });
     return res.ok;
   } catch (err) {
