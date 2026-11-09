@@ -140,32 +140,7 @@ function readServerStock(): any[] {
   } catch (err) {
     console.warn('Erro ao ler data/stock.json:', err);
   }
-  // Initialize from catalog if not exists
-  const serverCatalog = readServerCatalog();
-  const initialStock = serverCatalog.map((p: any, idx: number) => {
-    const basePrice = Number(p.price) || 0;
-    return {
-      id: p.id || `stock-${p.code || 'item'}-${idx}`,
-      code: p.code && p.code !== '-' ? p.code : '',
-      name: p.name || '',
-      currentStock: 100,
-      minStock: 15,
-      costPrice: Math.round(basePrice * 0.6 * 100) / 100,
-      wholesalePrice: Math.round(basePrice * 0.88 * 100) / 100,
-      retailPrice: Math.round(basePrice * 100) / 100,
-      category: (p.name || '').toLowerCase().includes('lixa')
-        ? 'Lixas'
-        : (p.name || '').toLowerCase().includes('bloco')
-        ? 'Polidores'
-        : (p.name || '').toLowerCase().includes('cílios') || (p.name || '').toLowerCase().includes('cilios')
-        ? 'Cílios'
-        : 'Geral',
-      unit: 'un',
-      updatedAt: Date.now(),
-    };
-  });
-  writeServerStock(initialStock, 'inicialização');
-  return initialStock;
+  return [];
 }
 
 interface StockStoreWrapper {

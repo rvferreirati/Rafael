@@ -41,24 +41,10 @@ export const buildInitialStockFromCatalog = (catalogList: CatalogProduct[] = DEF
 export const loadStoredStock = (): StockItem[] => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_STOCK);
-    if (raw) {
+    if (raw !== null) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        // Upgrade codes to 92000... to match official spreadsheet
-        const needsUpgrade = parsed.some((it: StockItem) => it.code && !it.code.startsWith('92000'));
-        if (needsUpgrade) {
-          const upgraded = parsed.map((it: StockItem, idx: number) => {
-            if (it.code && !it.code.startsWith('92000')) {
-              return { ...it, code: `92000${it.code.replace(/^#/, '')}` };
-            }
-            if (!it.code || it.code === '-') {
-              return { ...it, code: `92000${501 + idx}` };
-            }
-            return it;
-          });
-          saveStoredStock(upgraded);
-          return upgraded;
-        }
+      if (Array.isArray(parsed)) {
+        // Return parsed array even if empty (0 items)
         return parsed;
       }
     }
@@ -66,7 +52,7 @@ export const loadStoredStock = (): StockItem[] => {
     console.warn('Erro ao carregar estoque do localStorage:', err);
   }
 
-  // Fallback: build initial stock from default catalog
+  // Initial startup defaults only if completely uninitialized
   const initial = buildInitialStockFromCatalog(DEFAULT_CATALOG);
   saveStoredStock(initial);
   return initial;
@@ -161,6 +147,17 @@ export const fetchServerStockMeta = async (): Promise<ServerStockMeta | null> =>
 
 export const pushServerStock = async (stock: StockItem[]): Promise<boolean> => {
   try {
+    // 1. Direct Cloud Firestore Sync (Cross-Device PC & Mobile, works on Vercel)
+    try {
+      const { pushAllStockToFirestore } = await import('../services/firestoreSync');
+      pushAllStockToFirestore(stock).catch((err) =>
+        console.warn('Firestore sync background notice:', err)
+      );
+    } catch (e) {
+      // background sync catch
+    }
+
+    // 2. Fallback server route
     const res = await fetch(`/api/stock?t=${Date.now()}`, {
       method: 'POST',
       headers: {

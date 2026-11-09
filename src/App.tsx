@@ -28,6 +28,13 @@ import {
   deductStockForOrder,
   restoreStockForOrder,
 } from './utils/stockManager';
+import {
+  subscribeToStock,
+  pushAllStockToFirestore,
+  subscribeToOrders,
+  saveOrderToFirestore,
+  deleteOrderFromFirestore,
+} from './services/firestoreSync';
 import { HelpCircle, Sparkles } from 'lucide-react';
 
 const STORAGE_KEYS = {
@@ -134,23 +141,31 @@ export default function App() {
   };
 
   useEffect(() => {
-    // If local catalog on PC has fewer than 63 products, immediately upgrade to full 63 products
+    // 1. Real-time Cloud Firestore Stock Sync (instant mobile & PC updates)
+    const unsubStock = subscribeToStock((cloudStock) => {
+      if (Array.isArray(cloudStock)) {
+        setStockList(cloudStock);
+      }
+    });
+
+    // 2. Real-time Cloud Firestore Orders Sync
+    const unsubOrders = subscribeToOrders((cloudOrders) => {
+      if (Array.isArray(cloudOrders) && cloudOrders.length > 0) {
+        setOrders(cloudOrders);
+      }
+    });
+
+    // If local catalog on PC has fewer than 63 products, upgrade to full catalog
     if (catalog.length < DEFAULT_CATALOG.length) {
       const merged = mergeCatalogProducts(DEFAULT_CATALOG, catalog);
       setCatalog(merged);
       saveStoredCatalog(merged);
     }
 
-    // On load and window focus, update catalog and stock from server
+    // Secondary fallback sync for catalog only
     fetchServerCatalog().then((serverCat) => {
       if (serverCat && serverCat.length > 0) {
         setCatalog(serverCat);
-      }
-    });
-
-    fetchServerStock().then((serverStock) => {
-      if (serverStock && serverStock.length > 0) {
-        setStockList(serverStock);
       }
     });
 
@@ -160,14 +175,13 @@ export default function App() {
           setCatalog(serverCat);
         }
       });
-      fetchServerStock().then((serverStock) => {
-        if (serverStock && serverStock.length > 0) {
-          setStockList(serverStock);
-        }
-      });
     };
     window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
+    return () => {
+      unsubStock();
+      unsubOrders();
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   const handleUpdateCatalog = (newCatalog: CatalogProduct[]) => {
@@ -179,6 +193,7 @@ export default function App() {
     setStockList(newStock);
     saveStoredStock(newStock);
     pushServerStock(newStock);
+    pushAllStockToFirestore(newStock);
   };
 
   // Persistence
@@ -241,8 +256,10 @@ export default function App() {
     if (result.success) {
       setStockList(result.updatedStock);
       newOrder.stockDeducted = true;
+      pushAllStockToFirestore(result.updatedStock);
     }
     setOrders((prev) => [newOrder, ...prev]);
+    saveOrderToFirestore(newOrder);
   };
 
   const handleDeleteOrder = (id: string) => {
@@ -252,9 +269,11 @@ export default function App() {
       const result = restoreStockForOrder(orderToDelete, stockList);
       if (result.success) {
         setStockList(result.updatedStock);
+        pushAllStockToFirestore(result.updatedStock);
       }
     }
     setOrders((prev) => prev.filter((o) => o.id !== id));
+    deleteOrderFromFirestore(id);
   };
 
   const handleUpdateOrder = (updatedOrder: SalesOrder) => {
@@ -266,6 +285,7 @@ export default function App() {
       if (result.success) {
         setStockList(result.updatedStock);
         updatedOrder.stockDeducted = false;
+        pushAllStockToFirestore(result.updatedStock);
       }
     }
     // Quando reativar um pedido cancelado, refaz a baixa do estoque!
@@ -274,10 +294,12 @@ export default function App() {
       if (result.success) {
         setStockList(result.updatedStock);
         updatedOrder.stockDeducted = true;
+        pushAllStockToFirestore(result.updatedStock);
       }
     }
 
     setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
+    saveOrderToFirestore(updatedOrder);
   };
 
   // Customer Handlers

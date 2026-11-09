@@ -588,6 +588,12 @@ export async function syncCatalogWithServer(
 
       if (mode === 'push') {
         await pushServerCatalog(local);
+        try {
+          const { pushAllCatalogToFirestore } = await import('../services/firestoreSync');
+          pushAllCatalogToFirestore(local).catch((e) => console.warn(e));
+        } catch (e) {
+          // ignore
+        }
         return {
           catalog: local,
           count: local.length,
@@ -600,6 +606,12 @@ export async function syncCatalogWithServer(
       const merged = mergeCatalogProducts(serverItems, local);
       saveStoredCatalog(merged);
       await pushServerCatalog(merged);
+      try {
+        const { pushAllCatalogToFirestore } = await import('../services/firestoreSync');
+        pushAllCatalogToFirestore(merged).catch((e) => console.warn(e));
+      } catch (e) {
+        // ignore
+      }
 
       return {
         catalog: merged,

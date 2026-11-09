@@ -1,0 +1,64 @@
+{
+  "entities": {
+    "StockItem": {
+      "title": "StockItem",
+      "description": "Item no controle de estoque da ARTEX7 com sincronização em nuvem",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "currentStock": { "type": "number" },
+        "minStock": { "type": "number" },
+        "costPrice": { "type": "number" },
+        "wholesalePrice": { "type": "number" },
+        "retailPrice": { "type": "number" },
+        "category": { "type": "string" },
+        "unit": { "type": "string" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "name", "currentStock"]
+    },
+    "SalesOrder": {
+      "title": "SalesOrder",
+      "description": "Pedido de venda gerado no sistema",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "orderNumber": { "type": "string" },
+        "orderDate": { "type": "string" },
+        "status": { "type": "string" },
+        "total": { "type": "number" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "orderNumber"]
+    },
+    "CatalogProduct": {
+      "title": "CatalogProduct",
+      "description": "Produto no catálogo geral da ARTEX7",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "category": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    }
+  },
+  "firestore": {
+    "/stock/{itemId}": {
+      "schema": "StockItem",
+      "description": "Coleção de estoque sincronizada entre PC e Celular em tempo real"
+    },
+    "/orders/{orderId}": {
+      "schema": "SalesOrder",
+      "description": "Coleção de pedidos de venda"
+    },
+    "/catalog/{productId}": {
+      "schema": "CatalogProduct",
+      "description": "Catálogo mestre de produtos sincronizado"
+    }
+  }
+}
