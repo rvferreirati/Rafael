@@ -1332,24 +1332,25 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       {/* ======================================================== */}
       {/* STEP NAVIGATION TABS                                     */}
       {/* ======================================================== */}
-      <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between gap-2 overflow-x-auto">
+      <div className="bg-white p-1.5 sm:p-2 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between gap-1.5 sm:gap-2">
         <button
           type="button"
           onClick={() => setActiveStep('upload')}
-          className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+          className={`flex-1 py-2.5 sm:py-3 px-2 sm:px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer ${
             activeStep === 'upload'
               ? 'bg-indigo-600 text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
         >
-          <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[11px]">
+          <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] sm:text-[11px] shrink-0">
             1
           </span>
-          <Upload className="w-4 h-4" />
-          <span>1. Inserir Prints / Imagens</span>
+          <Upload className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline">1. Inserir Prints / Imagens</span>
+          <span className="sm:hidden">1. Prints</span>
           {uploadedPrints.length > 0 && (
-            <span className="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-500 text-white">
-              {uploadedPrints.length} print{uploadedPrints.length > 1 ? 's' : ''}
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500 text-white font-mono">
+              {uploadedPrints.length}
             </span>
           )}
         </button>
@@ -1357,42 +1358,44 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
         <button
           type="button"
           onClick={() => setActiveStep('items')}
-          className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all relative ${
+          className={`flex-1 py-2.5 sm:py-3 px-2 sm:px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 transition-all relative cursor-pointer ${
             activeStep === 'items'
               ? 'bg-indigo-600 text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
         >
-          <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[11px]">
+          <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] sm:text-[11px] shrink-0">
             2
           </span>
-          <Edit3 className="w-4 h-4" />
-          <span>2. Itens e Produtos (Alterar Valores)</span>
+          <Edit3 className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline">2. Itens e Produtos (Valores)</span>
+          <span className="sm:hidden">2. Itens</span>
           <span
-            className={`ml-1 text-[10px] px-2 py-0.5 rounded-full font-mono ${
+            className={`text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full font-mono ${
               activeStep === 'items'
-                ? 'bg-white text-indigo-700'
+                ? 'bg-white text-indigo-700 font-bold'
                 : 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200'
             }`}
           >
-            {items.length} itens
+            {items.length}
           </span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveStep('review')}
-          className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+          className={`flex-1 py-2.5 sm:py-3 px-2 sm:px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer ${
             activeStep === 'review'
               ? 'bg-indigo-600 text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
         >
-          <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[11px]">
+          <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] sm:text-[11px] shrink-0">
             3
           </span>
-          <FileDown className="w-4 h-4" />
-          <span>3. Cliente & Gerar PDF</span>
+          <FileDown className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline">3. Cliente & Gerar PDF</span>
+          <span className="sm:hidden">3. Finalizar</span>
         </button>
       </div>
 
@@ -2160,8 +2163,156 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             </div>
           )}
 
-          {/* Line Items Table */}
-          <div className="overflow-x-auto rounded-2xl border border-slate-200">
+          {/* Mobile Item Cards List (< 768px) */}
+          <div className="md:hidden space-y-3">
+            {items.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
+                <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-2">
+                  <Package className="w-5 h-5" />
+                </div>
+                <p className="text-xs font-bold text-slate-700">Nenhum produto adicionado ao pedido</p>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Digite o código ou nome do produto na barra acima para adicionar.
+                </p>
+              </div>
+            ) : (
+              items.map((item, index) => {
+                const st = getStockInfoForItem(item);
+                const isOutOfStock = st ? st.currentStock <= 0 : false;
+                const isLowStock = st && st.minStock !== undefined ? st.currentStock <= st.minStock : false;
+                const isOverRequested = st ? item.quantity > st.currentStock : false;
+
+                return (
+                  <div
+                    key={item.id}
+                    className={`bg-white rounded-2xl border p-3.5 space-y-3 shadow-2xs transition-all ${
+                      selectedItemIds.includes(item.id)
+                        ? 'border-rose-300 bg-rose-50/40 ring-2 ring-rose-200'
+                        : 'border-slate-200'
+                    }`}
+                  >
+                    {/* Top Row: Checkbox, Code, Stock Status, Delete */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={selectedItemIds.includes(item.id)}
+                          onChange={() => handleToggleSelectItem(item.id)}
+                          className="w-5 h-5 rounded border-slate-300 text-indigo-600 cursor-pointer shrink-0"
+                          title="Marcar item para exclusão"
+                        />
+                        <input
+                          type="text"
+                          value={item.code}
+                          onChange={(e) => handleUpdateItem(item.id, 'code', e.target.value)}
+                          placeholder="Cód."
+                          className="w-24 border border-slate-200 bg-slate-50 rounded-lg px-2 py-1 text-xs font-mono font-bold outline-none focus:border-indigo-500 text-slate-800"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {st && (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                              isOutOfStock
+                                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : isLowStock
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            }`}
+                          >
+                            <Boxes className="w-2.5 h-2.5 shrink-0" />
+                            <span>{st.currentStock} {st.unit || 'un'}</span>
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItem(item.id)}
+                          className="w-9 h-9 rounded-xl text-rose-500 hover:text-rose-700 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
+                          title="Apagar este item"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Description input */}
+                    <div>
+                      <input
+                        type="text"
+                        required
+                        value={item.description}
+                        onChange={(e) => handleUpdateItem(item.id, 'description', e.target.value)}
+                        placeholder="Nome ou descrição do item"
+                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500 bg-white"
+                      />
+                    </div>
+
+                    {/* Bottom Row: Stepper & Price / Subtotal */}
+                    <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-100 bg-slate-50/70 p-2.5 rounded-xl">
+                      {/* Quantity Stepper */}
+                      <div className="flex items-center border border-slate-300 rounded-xl overflow-hidden bg-white shadow-2xs">
+                        <button
+                          type="button"
+                          onClick={() => handleStepQuantity(item.id, -1)}
+                          className="w-9 h-9 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
+                          title="Diminuir"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          required
+                          value={item.quantity === 0 ? '' : item.quantity}
+                          onChange={(e) => handleUpdateItem(item.id, 'quantity', e.target.value)}
+                          className="w-12 text-center font-bold text-xs outline-none py-1.5"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleStepQuantity(item.id, 1)}
+                          className="w-9 h-9 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
+                          title="Aumentar"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {/* Price and Subtotal */}
+                      <div className="flex items-center gap-2">
+                        <div className="relative w-24">
+                          <span className="absolute left-2 top-1.5 text-[10px] text-slate-400 font-semibold">
+                            {company.currency || '$'}
+                          </span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            required
+                            value={item.unitPrice === 0 ? '' : item.unitPrice}
+                            onChange={(e) => handleUpdateItem(item.id, 'unitPrice', e.target.value)}
+                            placeholder="0.00"
+                            className="w-full border border-slate-200 rounded-lg pl-6 pr-2 py-1.5 text-xs font-mono font-bold text-right outline-none focus:border-indigo-500 bg-white"
+                          />
+                        </div>
+
+                        <div className="text-right">
+                          <span className="text-[10px] text-slate-400 block font-medium">Subtotal</span>
+                          <span className="font-mono font-black text-xs text-indigo-700 whitespace-nowrap">
+                            {(company.currency || '$')} {(item.total || 0).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Line Items Table (Desktop >= 768px) */}
+          <div className="hidden md:block overflow-x-auto rounded-2xl border border-slate-200">
             <table className="w-full text-left text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-700 uppercase tracking-wider">

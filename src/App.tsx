@@ -367,7 +367,7 @@ export default function App() {
       />
 
       {/* Main Content Viewport */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex-1 w-full">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 pb-24 md:pb-8 flex-1 w-full">
         {activeTab === 'create-order' && (
           <CreateOrderTab
             customers={customers}
@@ -417,8 +417,8 @@ export default function App() {
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-4 text-xs text-slate-500">
+      {/* Footer (Desktop only, mobile has bottom nav) */}
+      <footer className="hidden md:block bg-white border-t border-slate-200 py-4 text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center space-x-2">
             <img src="/assets/aistudio/Logo_ARtex7_em_Preto_254e2cb7.png" alt="ARTEX7" className="h-4 w-auto object-contain" />

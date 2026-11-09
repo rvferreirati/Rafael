@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import {
   Boxes,
   Plus,
+  Minus,
   Search,
   FileSpreadsheet,
   Download,
@@ -378,6 +379,27 @@ export const StockTab: React.FC<StockTabProps> = ({
       `✓ Saldo ajustado: ${adjustingItem.name} (${prev} → ${next} un)`
     );
     setIsAdjustModalOpen(false);
+  };
+
+  // Quick 1-tap stock stepper for mobile
+  const handleQuickStepStock = (item: StockItem, delta: number) => {
+    const prev = item.currentStock;
+    const next = Math.max(0, prev + delta);
+    if (prev === next) return;
+
+    let changedItem: StockItem | null = null;
+    const updated = stockList.map((it) => {
+      if (it.id === item.id) {
+        changedItem = { ...it, currentStock: next, updatedAt: Date.now() };
+        return changedItem;
+      }
+      return it;
+    });
+
+    onUpdateStock(updated);
+    saveStoredStock(updated);
+    pushServerStock(updated);
+    if (changedItem) saveStockItemToFirestore(changedItem);
   };
 
   // Excel file upload
@@ -805,8 +827,169 @@ export const StockTab: React.FC<StockTabProps> = ({
         </div>
       )}
 
-      {/* Main Stock Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      {/* Mobile Selection Header */}
+      <div className="md:hidden flex items-center justify-between px-1 py-1 text-xs">
+        <label className="flex items-center gap-2 font-bold text-slate-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={filteredStock.length > 0 && selectedStockIds.length === filteredStock.length}
+            onChange={handleToggleSelectAllStock}
+            className="w-4 h-4 rounded border-slate-300 text-indigo-600 cursor-pointer"
+          />
+          <span>Selecionar todos ({filteredStock.length})</span>
+        </label>
+        <span className="text-[11px] text-slate-500 font-medium">
+          {filteredStock.length} produto{filteredStock.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      {/* Mobile Card List (< 768px) */}
+      <div className="md:hidden space-y-3">
+        {filteredStock.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-400">
+            <Package className="w-8 h-8 mx-auto mb-2 opacity-40" />
+            <p className="font-bold text-sm">Nenhum produto encontrado</p>
+            <p className="text-xs text-slate-500 mt-1">
+              Ajuste os filtros de pesquisa ou clique em "+ Novo Produto".
+            </p>
+          </div>
+        ) : (
+          filteredStock.map((item) => {
+            const min = item.minStock || 15;
+            const isOut = item.currentStock <= 0;
+            const isLow = !isOut && item.currentStock <= min;
+
+            return (
+              <div
+                key={item.id}
+                className={`bg-white rounded-2xl border transition-all p-3.5 space-y-3 shadow-2xs ${
+                  selectedStockIds.includes(item.id)
+                    ? 'border-rose-300 bg-rose-50/30 ring-2 ring-rose-200'
+                    : 'border-slate-200'
+                }`}
+              >
+                {/* Header: Checkbox, Code, Category, Actions */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={selectedStockIds.includes(item.id)}
+                      onChange={() => handleToggleSelectStock(item.id)}
+                      className="w-5 h-5 rounded border-slate-300 text-indigo-600 cursor-pointer shrink-0"
+                    />
+                    {item.code ? (
+                      <span className="font-mono font-bold text-xs bg-slate-100 text-slate-800 px-2 py-0.5 rounded-md border border-slate-200 shrink-0">
+                        {item.code}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 font-mono text-xs">Sem cód.</span>
+                    )}
+                    {item.category && item.category !== 'Geral' && (
+                      <span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded-md truncate">
+                        {item.category}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEdit(item)}
+                      className="w-9 h-9 rounded-xl text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 flex items-center justify-center transition-colors cursor-pointer"
+                      title="Editar produto"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteItem(item)}
+                      className="w-9 h-9 rounded-xl text-rose-500 hover:text-rose-700 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
+                      title="Excluir produto do estoque"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Product Name */}
+                <div className="font-bold text-slate-900 text-sm leading-snug">
+                  {item.name}
+                </div>
+
+                {/* Stock Stepper & Status */}
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 bg-slate-50/60 p-2.5 rounded-xl">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleQuickStepStock(item, -1)}
+                      className="w-9 h-9 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 active:bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-base transition-colors shadow-2xs cursor-pointer"
+                      title="Diminuir 1 do estoque"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAdjust(item)}
+                      className={`font-mono font-black text-sm px-3 py-1.5 rounded-lg border cursor-pointer ${
+                        isOut
+                          ? 'bg-rose-50 text-rose-700 border-rose-300'
+                          : isLow
+                          ? 'bg-amber-50 text-amber-700 border-amber-300'
+                          : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      }`}
+                      title="Clique para ajuste detalhado"
+                    >
+                      {item.currentStock} {item.unit || 'un'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickStepStock(item, 1)}
+                      className="w-9 h-9 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 active:bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-base transition-colors shadow-2xs cursor-pointer"
+                      title="Adicionar 1 ao estoque"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAdjust(item)}
+                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 py-1.5 px-2.5 rounded-lg hover:bg-indigo-50 transition-colors"
+                  >
+                    <ArrowUpDown className="w-3.5 h-3.5" />
+                    <span>Ajustar</span>
+                  </button>
+                </div>
+
+                {/* 3-Column Prices Grid */}
+                <div className="grid grid-cols-3 gap-2 text-center text-xs pt-1">
+                  <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                    <span className="text-[10px] text-slate-500 uppercase font-semibold block">Custo</span>
+                    <span className="font-mono font-bold text-slate-700">
+                      R$ {item.costPrice.toFixed(2).replace('.', ',')}
+                    </span>
+                  </div>
+                  <div className="bg-blue-50/60 p-2 rounded-xl border border-blue-100">
+                    <span className="text-[10px] text-blue-600 uppercase font-semibold block">Atacado</span>
+                    <span className="font-mono font-black text-blue-700">
+                      R$ {item.wholesalePrice.toFixed(2).replace('.', ',')}
+                    </span>
+                  </div>
+                  <div className="bg-emerald-50/60 p-2 rounded-xl border border-emerald-100">
+                    <span className="text-[10px] text-emerald-600 uppercase font-semibold block">Varejo</span>
+                    <span className="font-mono font-black text-emerald-700">
+                      R$ {item.retailPrice.toFixed(2).replace('.', ',')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Main Stock Table (Desktop >= 768px) */}
+      <div className="hidden md:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs sm:text-sm border-collapse">
             <thead>

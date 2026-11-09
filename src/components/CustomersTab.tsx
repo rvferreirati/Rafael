@@ -123,74 +123,133 @@ export const CustomersTab: React.FC<CustomersTabProps> = ({
             <p className="text-sm">Nenhum cliente encontrado com os termos pesquisados.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                <tr>
-                  <th className="py-3 px-4">Nome / Razão Social</th>
-                  <th className="py-3 px-4">CNPJ / Tax ID</th>
-                  <th className="py-3 px-4">Contato</th>
-                  <th className="py-3 px-4">Endereço</th>
-                  <th className="py-3 px-4 text-center">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filtered.map((c) => (
-                  <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="py-3.5 px-4 font-semibold text-slate-900">
-                      {c.name}
-                    </td>
-                    <td className="py-3.5 px-4 font-mono text-xs text-slate-600">
-                      {c.taxId || '—'}
-                    </td>
-                    <td className="py-3.5 px-4 text-xs text-slate-600 space-y-0.5">
-                      {c.email && (
-                        <div className="flex items-center gap-1.5">
-                          <Mail className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{c.email}</span>
-                        </div>
-                      )}
-                      {c.phone && (
-                        <div className="flex items-center gap-1.5">
-                          <Phone className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{c.phone}</span>
-                        </div>
-                      )}
-                      {!c.email && !c.phone && <span>—</span>}
-                    </td>
-                    <td className="py-3.5 px-4 text-xs text-slate-500 max-w-xs truncate">
-                      {c.address ? (
-                        <div className="flex items-center gap-1.5">
-                          <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span className="truncate">{c.address}</span>
-                        </div>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-center space-x-2">
+          <>
+            {/* Mobile Customer Cards (< 768px) */}
+            <div className="md:hidden divide-y divide-slate-100">
+              {filtered.map((c) => (
+                <div key={c.id} className="p-4 space-y-2.5 bg-white">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-bold text-slate-900 text-sm">{c.name}</div>
+                    <div className="flex items-center gap-1 shrink-0">
                       <button
                         type="button"
                         onClick={() => handleOpenEdit(c)}
-                        className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold p-1.5 rounded-lg hover:bg-indigo-50"
+                        className="w-9 h-9 rounded-xl text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 flex items-center justify-center transition-colors cursor-pointer"
                         title="Editar cliente"
                       >
-                        <Edit2 className="w-3.5 h-3.5 inline" />
+                        <Edit2 className="w-4 h-4" />
                       </button>
                       <button
                         type="button"
                         onClick={() => setCustomerToDelete(c)}
-                        className="text-xs text-rose-500 hover:text-rose-700 font-semibold p-1.5 rounded-lg hover:bg-rose-50 cursor-pointer"
+                        className="w-9 h-9 rounded-xl text-rose-500 hover:text-rose-700 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
                         title="Excluir cliente"
                       >
-                        <Trash2 className="w-3.5 h-3.5 inline" />
+                        <Trash2 className="w-4 h-4" />
                       </button>
-                    </td>
+                    </div>
+                  </div>
+
+                  {c.taxId && (
+                    <div className="text-[11px] text-slate-500 font-mono">
+                      CNPJ/CPF: {c.taxId}
+                    </div>
+                  )}
+
+                  <div className="space-y-1 text-xs text-slate-600 pt-1 border-t border-slate-50">
+                    {c.phone && (
+                      <div className="flex items-center gap-2">
+                        <Phone className="w-3.5 h-3.5 text-slate-400" />
+                        <span>{c.phone}</span>
+                      </div>
+                    )}
+                    {c.email && (
+                      <div className="flex items-center gap-2">
+                        <Mail className="w-3.5 h-3.5 text-slate-400" />
+                        <span>{c.email}</span>
+                      </div>
+                    )}
+                    {c.address && (
+                      <div className="flex items-start gap-2">
+                        <MapPin className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+                        <span className="text-slate-500 text-[11px]">{c.address}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Customers Table (>= 768px) */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  <tr>
+                    <th className="py-3 px-4">Nome / Razão Social</th>
+                    <th className="py-3 px-4">CNPJ / Tax ID</th>
+                    <th className="py-3 px-4">Contato</th>
+                    <th className="py-3 px-4">Endereço</th>
+                    <th className="py-3 px-4 text-center">Ações</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filtered.map((c) => (
+                    <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-3.5 px-4 font-semibold text-slate-900">
+                        {c.name}
+                      </td>
+                      <td className="py-3.5 px-4 font-mono text-xs text-slate-600">
+                        {c.taxId || '—'}
+                      </td>
+                      <td className="py-3.5 px-4 text-xs text-slate-600 space-y-0.5">
+                        {c.email && (
+                          <div className="flex items-center gap-1.5">
+                            <Mail className="w-3.5 h-3.5 text-slate-400" />
+                            <span>{c.email}</span>
+                          </div>
+                        )}
+                        {c.phone && (
+                          <div className="flex items-center gap-1.5">
+                            <Phone className="w-3.5 h-3.5 text-slate-400" />
+                            <span>{c.phone}</span>
+                          </div>
+                        )}
+                        {!c.email && !c.phone && <span>—</span>}
+                      </td>
+                      <td className="py-3.5 px-4 text-xs text-slate-500 max-w-xs truncate">
+                        {c.address ? (
+                          <div className="flex items-center gap-1.5">
+                            <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span className="truncate">{c.address}</span>
+                          </div>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-center space-x-2">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(c)}
+                          className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold p-1.5 rounded-lg hover:bg-indigo-50"
+                          title="Editar cliente"
+                        >
+                          <Edit2 className="w-3.5 h-3.5 inline" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCustomerToDelete(c)}
+                          className="text-xs text-rose-500 hover:text-rose-700 font-semibold p-1.5 rounded-lg hover:bg-rose-50 cursor-pointer"
+                          title="Excluir cliente"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 inline" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 

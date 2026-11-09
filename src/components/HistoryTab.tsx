@@ -193,116 +193,226 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ orders, company, onDelet
             <p className="text-sm">Nenhum pedido de venda registrado até o momento.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                <tr>
-                  <th className="py-3 px-4">Nº Pedido</th>
-                  <th className="py-3 px-4">Data</th>
-                  <th className="py-3 px-4">Cliente</th>
-                  <th className="py-3 px-4 text-center">Status</th>
-                  <th className="py-3 px-4 text-right">Qtd Itens</th>
-                  <th className="py-3 px-4 text-right">Valor Total</th>
-                  <th className="py-3 px-4 text-center">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filtered.map((order) => (
-                  <tr key={order.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="py-3.5 px-4 font-mono font-bold text-indigo-600 text-xs">
+          <>
+            {/* Mobile Order Cards (< 768px) */}
+            <div className="md:hidden divide-y divide-slate-100">
+              {filtered.map((order) => (
+                <div key={order.id} className="p-4 space-y-3 bg-white">
+                  {/* Top Bar: Order Number & Status */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono font-bold text-sm text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
                       {order.orderNumber}
-                    </td>
-                    <td className="py-3.5 px-4 text-xs text-slate-600">
-                      {order.orderDate}
-                    </td>
-                    <td className="py-3.5 px-4 font-medium text-slate-900">
-                      <div>{order.customer.name}</div>
-                      {order.customer.taxId && (
-                        <div className="text-[11px] text-slate-400 font-mono">
-                          {order.customer.taxId}
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-center">
-                      {getStatusBadge(order.status)}
-                    </td>
-                    <td className="py-3.5 px-4 text-right text-xs text-slate-600">
-                      {order.items.length} itens
-                    </td>
-                    <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900 text-sm">
-                      {company.currency || '$'} {order.grandTotal.toFixed(2)}
-                    </td>
-                    <td className="py-3.5 px-4 text-center space-x-1.5 whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingOrder(order);
-                          setIsEditOpen(true);
-                        }}
-                        className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold rounded-lg inline-flex items-center gap-1 transition-colors border border-amber-200"
-                        title="Alterar quantidades, valores e gerar PDF novamente"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                        <span>Editar</span>
-                      </button>
+                    </span>
+                    <div>{getStatusBadge(order.status)}</div>
+                  </div>
 
-                      {order.status !== 'cancelled' ? (
-                        <button
-                          type="button"
-                          onClick={() => handleToggleCancelOrder(order)}
-                          className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold rounded-lg inline-flex items-center gap-1 transition-colors border border-rose-200 cursor-pointer"
-                          title="Cancelar pedido e voltar produtos para o estoque"
-                        >
-                          <XCircle className="w-3.5 h-3.5" />
-                          <span>Cancelar</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleToggleCancelOrder(order)}
-                          className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold rounded-lg inline-flex items-center gap-1 transition-colors border border-emerald-300 cursor-pointer"
-                          title="Reativar pedido e baixar estoque novamente"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          <span>Reativar</span>
-                        </button>
-                      )}
+                  {/* Customer Info */}
+                  <div>
+                    <div className="font-bold text-slate-900 text-sm">{order.customer.name}</div>
+                    {order.customer.taxId && (
+                      <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                        {order.customer.taxId}
+                      </div>
+                    )}
+                  </div>
 
+                  {/* Date, Items & Total */}
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 bg-slate-50/70 p-3 rounded-xl">
+                    <div className="text-xs text-slate-600 space-y-0.5">
+                      <div>Data: <strong className="text-slate-800">{order.orderDate}</strong></div>
+                      <div className="text-[11px] text-slate-500">{order.items.length} produto(s)</div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-slate-500 uppercase font-semibold block">Total</span>
+                      <span className="font-mono font-black text-base text-slate-900">
+                        {company.currency || '$'} {order.grandTotal.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Primary Touch Actions: WhatsApp & PDF */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedOrderToSend(order);
+                        setIsSendOpen(true);
+                      }}
+                      className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                    >
+                      <Send className="w-4 h-4" />
+                      <span>WhatsApp / Enviar</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadPDF(order)}
+                      className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Baixar PDF</span>
+                    </button>
+                  </div>
+
+                  {/* Secondary Actions: Edit, Cancel, Delete */}
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingOrder(order);
+                        setIsEditOpen(true);
+                      }}
+                      className="flex-1 py-2 px-2.5 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 text-amber-800 text-xs font-bold rounded-xl inline-flex items-center justify-center gap-1.5 transition-colors border border-amber-200 cursor-pointer"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Editar</span>
+                    </button>
+
+                    {order.status !== 'cancelled' ? (
                       <button
                         type="button"
-                        onClick={() => {
-                          setSelectedOrderToSend(order);
-                          setIsSendOpen(true);
-                        }}
-                        className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold rounded-lg inline-flex items-center gap-1 transition-colors"
-                        title="Enviar pedido por WhatsApp ou E-mail"
+                        onClick={() => handleToggleCancelOrder(order)}
+                        className="flex-1 py-2 px-2.5 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold rounded-xl inline-flex items-center justify-center gap-1.5 transition-colors border border-rose-200 cursor-pointer"
                       >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>Enviar</span>
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>Cancelar</span>
                       </button>
+                    ) : (
                       <button
                         type="button"
-                        onClick={() => handleDownloadPDF(order)}
-                        className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg inline-flex items-center gap-1 transition-colors"
-                        title="Baixar PDF do pedido"
+                        onClick={() => handleToggleCancelOrder(order)}
+                        className="flex-1 py-2 px-2.5 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-800 text-xs font-bold rounded-xl inline-flex items-center justify-center gap-1.5 transition-colors border border-emerald-300 cursor-pointer"
                       >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>PDF</span>
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Reativar</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setOrderToDelete(order)}
-                        className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
-                        title="Excluir pedido"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 inline" />
-                      </button>
-                    </td>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setOrderToDelete(order)}
+                      className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                      title="Excluir pedido"
+                    >
+                      <Trash2 className="w-4 h-4 text-rose-500" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Orders Table (>= 768px) */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  <tr>
+                    <th className="py-3 px-4">Nº Pedido</th>
+                    <th className="py-3 px-4">Data</th>
+                    <th className="py-3 px-4">Cliente</th>
+                    <th className="py-3 px-4 text-center">Status</th>
+                    <th className="py-3 px-4 text-right">Qtd Itens</th>
+                    <th className="py-3 px-4 text-right">Valor Total</th>
+                    <th className="py-3 px-4 text-center">Ações</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filtered.map((order) => (
+                    <tr key={order.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-3.5 px-4 font-mono font-bold text-indigo-600 text-xs">
+                        {order.orderNumber}
+                      </td>
+                      <td className="py-3.5 px-4 text-xs text-slate-600">
+                        {order.orderDate}
+                      </td>
+                      <td className="py-3.5 px-4 font-medium text-slate-900">
+                        <div>{order.customer.name}</div>
+                        {order.customer.taxId && (
+                          <div className="text-[11px] text-slate-400 font-mono">
+                            {order.customer.taxId}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        {getStatusBadge(order.status)}
+                      </td>
+                      <td className="py-3.5 px-4 text-right text-xs text-slate-600">
+                        {order.items.length} itens
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900 text-sm">
+                        {company.currency || '$'} {order.grandTotal.toFixed(2)}
+                      </td>
+                      <td className="py-3.5 px-4 text-center space-x-1.5 whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingOrder(order);
+                            setIsEditOpen(true);
+                          }}
+                          className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold rounded-lg inline-flex items-center gap-1 transition-colors border border-amber-200"
+                          title="Alterar quantidades, valores e gerar PDF novamente"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Editar</span>
+                        </button>
+
+                        {order.status !== 'cancelled' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCancelOrder(order)}
+                            className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold rounded-lg inline-flex items-center gap-1 transition-colors border border-rose-200 cursor-pointer"
+                            title="Cancelar pedido e voltar produtos para o estoque"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            <span>Cancelar</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCancelOrder(order)}
+                            className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold rounded-lg inline-flex items-center gap-1 transition-colors border border-emerald-300 cursor-pointer"
+                            title="Reativar pedido e baixar estoque novamente"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Reativar</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedOrderToSend(order);
+                            setIsSendOpen(true);
+                          }}
+                          className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold rounded-lg inline-flex items-center gap-1 transition-colors"
+                          title="Enviar pedido por WhatsApp ou E-mail"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Enviar</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadPDF(order)}
+                          className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg inline-flex items-center gap-1 transition-colors"
+                          title="Baixar PDF do pedido"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>PDF</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setOrderToDelete(order)}
+                          className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
+                          title="Excluir pedido"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 inline" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 
