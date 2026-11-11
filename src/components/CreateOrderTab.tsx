@@ -267,6 +267,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     wholesalePrice?: number;
     retailPrice?: number;
     costPrice?: number;
+    category?: string;
   };
 
   const [matchedCatalogProduct, setMatchedCatalogProduct] = useState<EnrichedCatalogProduct | null>(null);
@@ -373,6 +374,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             wholesalePrice: st.wholesalePrice,
             retailPrice: st.retailPrice,
             costPrice: st.costPrice,
+            category: st.category,
           },
           score,
         });
@@ -1867,23 +1869,23 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
           </div>
 
           {/* Lançamento Rápido por Código com Busca Automática no Estoque */}
-          <div className="bg-gradient-to-r from-indigo-50/90 via-sky-50/40 to-emerald-50/70 border-2 border-indigo-200/90 rounded-2xl p-4 sm:p-5 space-y-3 shadow-xs">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-xs">
+          <div className="bg-gradient-to-r from-indigo-50/90 via-sky-50/40 to-emerald-50/70 border-2 border-indigo-200/90 rounded-2xl p-3.5 sm:p-5 space-y-3 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="flex items-start sm:items-center gap-2.5">
+                <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-xs shrink-0 mt-0.5 sm:mt-0">
                   <Barcode className="w-5 h-5" />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                     <span className="font-bold text-slate-900 text-sm sm:text-base">
                       Lançamento por Código ou Nome do Produto
                     </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200 shrink-0">
                       ✓ Estoque Conectado ({activeStock.length} produtos)
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Digite o código da planilha (ex: <strong>9200047</strong>), apenas os <strong>últimos números</strong> (ex: digite <strong>46</strong> para achar 9200046 e 92000346, <strong>37</strong> para 92000237) ou o <strong>nome do produto</strong>.
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Digite o código da planilha (ex: <strong>9200047</strong>), apenas os <strong>últimos números</strong> (ex: digite <strong>46</strong> para achar 9200046, <strong>37</strong> para 92000237) ou o <strong>nome do produto</strong>.
                   </p>
                 </div>
               </div>
@@ -1891,15 +1893,15 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
               <button
                 type="button"
                 onClick={() => setIsBatchCodeModalOpen(true)}
-                className="px-3.5 py-2 bg-white hover:bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer self-start sm:self-auto"
+                className="w-full sm:w-auto px-3.5 py-2 bg-white hover:bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 shadow-2xs transition-colors cursor-pointer shrink-0"
               >
                 <FileText className="w-3.5 h-3.5 text-emerald-600" />
                 <span>Colar Vários Códigos em Massa</span>
               </button>
             </div>
 
-            <form onSubmit={handleAddProductByCode} className="flex flex-wrap sm:flex-nowrap items-center gap-2 pt-1">
-              <div className="relative flex-1 min-w-[220px]">
+            <form onSubmit={handleAddProductByCode} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+              <div className="relative flex-1">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                   <Search className="w-4 h-4 text-indigo-500" />
                 </div>
@@ -1908,38 +1910,40 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                   type="text"
                   value={fastCodeInput}
                   onChange={(e) => handleFastCodeChange(e.target.value)}
-                  placeholder="Digite o código (ex: 47) ou o nome do produto (ex: Lixa moeda, Secante)..."
-                  className="w-full pl-9 pr-3 py-2.5 border-2 border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 rounded-xl text-xs sm:text-sm font-semibold bg-white outline-none shadow-2xs transition-all placeholder:text-slate-400"
+                  placeholder="Digite o código (ex: 47, 9200047) ou o nome..."
+                  className="w-full pl-9 pr-3 py-2.5 border-2 border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 rounded-xl text-xs sm:text-sm font-semibold bg-white outline-none shadow-2xs transition-all placeholder:text-slate-400 min-h-[44px]"
                 />
               </div>
 
-              <div className="w-28 sm:w-32 flex items-center border-2 border-slate-300 bg-white rounded-xl overflow-hidden focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-200 shadow-2xs">
-                <span className="text-[11px] font-bold text-slate-500 px-2.5 select-none bg-slate-50 py-2.5 border-r border-slate-200">
-                  Qtd
-                </span>
-                <input
-                  type="number"
-                  min="1"
-                  value={fastQuantityInput}
-                  onChange={(e) => setFastQuantityInput(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                  className="w-full py-2.5 pr-2 text-xs sm:text-sm font-bold text-center outline-none bg-transparent"
-                />
-              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-28 sm:w-32 flex items-center border-2 border-slate-300 bg-white rounded-xl overflow-hidden focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-200 shadow-2xs min-h-[44px]">
+                  <span className="text-[11px] font-bold text-slate-500 px-2.5 select-none bg-slate-50 py-2.5 border-r border-slate-200">
+                    Qtd
+                  </span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={fastQuantityInput}
+                    onChange={(e) => setFastQuantityInput(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    className="w-full py-2.5 pr-2 text-xs sm:text-sm font-bold text-center outline-none bg-transparent"
+                  />
+                </div>
 
-              <button
-                type="submit"
-                disabled={!fastCodeInput.trim()}
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 shadow-md transition-all cursor-pointer shrink-0"
-              >
-                <Plus className="w-4 h-4" />
-                <span>+ Inserir no Pedido</span>
-              </button>
+                <button
+                  type="submit"
+                  disabled={!fastCodeInput.trim()}
+                  className="flex-1 sm:flex-none px-4 sm:px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 shadow-md transition-all cursor-pointer shrink-0 min-h-[44px]"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+ Inserir no Pedido</span>
+                </button>
+              </div>
             </form>
 
-            {/* Live Search Results List - Showing ALL matching products */}
+            {/* Live Search Results List - Showing ALL matching products with spacious mobile card layout */}
             {fastCodeInput.trim().length >= 1 && matchingProducts.length > 0 && (
-              <div className="bg-white border-2 border-emerald-400 rounded-2xl p-3.5 shadow-lg space-y-2.5 animate-in fade-in slide-in-from-top-1">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-emerald-100">
+              <div className="bg-white border-2 border-emerald-400 rounded-2xl p-3 sm:p-4 shadow-lg space-y-3 animate-in fade-in slide-in-from-top-1">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-emerald-100">
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
                       {matchingProducts.length}
@@ -1948,20 +1952,20 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                       <span className="text-xs font-black text-slate-800">
                         {matchingProducts.length === 1
                           ? `1 produto encontrado para "${fastCodeInput}":`
-                          : `${matchingProducts.length} produtos encontrados para "${fastCodeInput}" no Estoque:`}
+                          : `${matchingProducts.length} produtos encontrados no Estoque:`}
                       </span>
                       <span className="text-[11px] text-emerald-700 block font-medium">
-                        Clique no produto desejado para adicionar ao pedido:
+                        Toque no produto para inserir no pedido:
                       </span>
                     </div>
                   </div>
 
                   {matchingProducts.length > 1 && (
-                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                    <div className="w-full sm:w-auto">
                       <button
                         type="button"
                         onClick={handleAddAllMatchingProducts}
-                        className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer transition-all flex items-center gap-1.5"
+                        className="w-full sm:w-auto px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer transition-all flex items-center justify-center gap-1.5 min-h-[38px]"
                         title="Adicionar todos os itens encontrados de uma vez ao pedido"
                       >
                         <Plus className="w-3.5 h-3.5" />
@@ -1971,68 +1975,79 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                   )}
                 </div>
 
-                {/* Scrollable list of ALL matching items */}
-                <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 rounded-xl border border-slate-200 bg-slate-50/50">
+                {/* Scrollable list of ALL matching items with spacious multi-row layout */}
+                <div className="max-h-80 sm:max-h-96 overflow-y-auto space-y-2 p-1 rounded-xl bg-slate-50/50">
                   {matchingProducts.map((p, idx) => {
                     const hasCode = p.code && p.code !== '-';
                     return (
                       <div
                         key={`${p.code || 'nocode'}-${p.name}-${idx}`}
                         onClick={() => handleAddSingleProduct(p)}
-                        className="p-2.5 hover:bg-emerald-50/90 transition-colors flex items-center justify-between gap-3 group cursor-pointer bg-white"
+                        className="p-3 sm:p-3.5 bg-white hover:bg-emerald-50/90 active:bg-emerald-100/70 rounded-xl border border-slate-200/90 hover:border-emerald-400 shadow-2xs transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3"
                       >
-                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                          {hasCode ? (
-                            <span className="font-mono font-bold text-xs px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">
-                              Cód: {p.code}
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-slate-500 font-semibold px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 shrink-0">
-                              Sem cód
-                            </span>
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-slate-800 text-xs sm:text-sm group-hover:text-emerald-950 transition-colors block truncate">
-                                {p.name}
+                        {/* Left / Top Section: Identification, Code & Stock */}
+                        <div className="flex-1 min-w-0 space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {hasCode ? (
+                              <span className="font-mono font-bold text-[11px] sm:text-xs px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 border border-emerald-300 shrink-0">
+                                Cód: {p.code}
                               </span>
-                              {p.currentStock !== undefined && (
-                                <span
-                                  className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded-full shrink-0 border ${
-                                    p.currentStock <= 0
-                                      ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                      : p.currentStock <= 15
-                                      ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                      : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                  }`}
-                                  title="Quantidade disponível em estoque"
-                                >
-                                  {p.currentStock <= 0 ? 'Esgotado' : `Estoque: ${p.currentStock} un`}
-                                </span>
-                              )}
-                            </div>
+                            ) : (
+                              <span className="text-[10px] text-slate-500 font-semibold px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 shrink-0">
+                                Sem cód
+                              </span>
+                            )}
+
+                            {p.category && p.category !== 'Geral' && (
+                              <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md truncate max-w-[120px]">
+                                {p.category}
+                              </span>
+                            )}
+
+                            {p.currentStock !== undefined && (
+                              <span
+                                className={`text-[10px] sm:text-[11px] font-bold font-mono px-2 py-0.5 rounded-full inline-flex items-center gap-1 border shrink-0 ${
+                                  p.currentStock <= 0
+                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                    : p.currentStock <= 15
+                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                    : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                }`}
+                                title="Quantidade disponível em estoque"
+                              >
+                                <Boxes className="w-2.5 h-2.5 shrink-0" />
+                                <span>{p.currentStock <= 0 ? 'Esgotado' : `Estoque: ${p.currentStock} un`}</span>
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Full Product Name without premature truncation */}
+                          <div className="font-bold text-slate-900 text-xs sm:text-sm leading-snug break-words">
+                            {p.name}
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2.5 shrink-0">
-                          <div className="text-right">
-                            <span className="text-[10px] text-slate-400 block font-semibold">
-                              {priceType === 'wholesale' ? 'Atacado' : 'Varejo'}
+                        {/* Right / Bottom Section: Price & Quick Insert Button */}
+                        <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 shrink-0">
+                          <div className="text-left sm:text-right">
+                            <span className="text-[10px] text-slate-400 block font-semibold leading-tight">
+                              Tabela {priceType === 'wholesale' ? 'Atacado' : 'Varejo'}
                             </span>
-                            <span className="font-mono font-black text-emerald-700 text-xs sm:text-sm">
+                            <span className="font-mono font-black text-emerald-700 text-sm sm:text-base">
                               R$ {p.price.toFixed(2).replace('.', ',')}
                             </span>
                           </div>
+
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleAddSingleProduct(p);
                             }}
-                            className="px-2.5 py-1 bg-emerald-600 group-hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-2xs cursor-pointer transition-colors flex items-center gap-1"
+                            className="px-3.5 py-2 sm:py-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer transition-colors flex items-center gap-1.5 min-h-[38px] sm:min-h-0"
                           >
-                            <Plus className="w-3 h-3" />
-                            <span>+{fastQuantityInput}</span>
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Inserir (+{fastQuantityInput})</span>
                           </button>
                         </div>
                       </div>
@@ -2044,22 +2059,22 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
 
             {/* Custom Item Preview if not found in catalog */}
             {matchingProducts.length === 0 && fastCodeInput.trim().length >= 2 && (
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-800 animate-in fade-in">
-                <div className="flex items-center gap-2.5">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-slate-800 animate-in fade-in">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-xs shrink-0">
                     +
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <span className="font-medium text-slate-500">Inserir produto pelo nome:</span>{' '}
-                    <strong className="text-slate-900 font-bold">"{fastCodeInput.trim()}"</strong>
+                    <strong className="text-slate-900 font-bold break-words">"{fastCodeInput.trim()}"</strong>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 self-end sm:self-auto">
-                  <span className="text-[11px] text-slate-500">Preço pode ser ajustado na tabela</span>
+                <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200">
+                  <span className="text-[11px] text-slate-500">Preço ajustável na tabela</span>
                   <button
                     type="button"
                     onClick={handleAddProductByCode}
-                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shadow-2xs cursor-pointer transition-colors"
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-2xs cursor-pointer transition-colors shrink-0"
                   >
                     + Inserir (+{fastQuantityInput})
                   </button>
@@ -2206,7 +2221,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                           value={item.code}
                           onChange={(e) => handleUpdateItem(item.id, 'code', e.target.value)}
                           placeholder="Cód."
-                          className="w-24 border border-slate-200 bg-slate-50 rounded-lg px-2 py-1 text-xs font-mono font-bold outline-none focus:border-indigo-500 text-slate-800"
+                          className="w-32 sm:w-36 border border-slate-200 bg-slate-50 rounded-lg px-2.5 py-1 text-xs font-mono font-bold outline-none focus:border-indigo-500 text-slate-800 shrink-0"
                         />
                       </div>
 
