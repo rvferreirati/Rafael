@@ -189,13 +189,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ company, onSaveCompany
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Taxa de Impostos Padrão (%)
+                Frete Padrão ({currency || 'R$'})
               </label>
               <input
                 type="number"
                 min="0"
-                max="100"
-                step="0.5"
+                step="0.01"
                 value={defaultTaxRate}
                 onChange={(e) => setDefaultTaxRate(parseFloat(e.target.value) || 0)}
                 className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-xs sm:text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-mono min-h-[44px]"

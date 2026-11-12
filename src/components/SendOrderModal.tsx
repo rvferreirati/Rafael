@@ -54,7 +54,7 @@ ${order.orderDueDate ? `⏳ Vencimento: ${order.orderDueDate}\n` : ''}
 ${itemsList}
 
 💵 *Subtotal:* ${currency} ${order.subtotal.toFixed(2)}
-${order.discountRate > 0 ? `🏷️ *Desconto (${order.discountRate}%):* -${currency} ${order.discountAmount.toFixed(2)}\n` : ''}${order.taxRate > 0 ? `🏛️ *Impostos (${order.taxRate}%):* +${currency} ${order.taxAmount.toFixed(2)}\n` : ''}⭐ *TOTAL GERAL: ${currency} ${order.grandTotal.toFixed(2)}*
+${order.discountAmount > 0 ? `🏷️ *Desconto${order.discountRate > 0 ? ` (${order.discountRate}%)` : ''}:* -${currency} ${order.discountAmount.toFixed(2)}\n` : ''}${order.taxAmount > 0 ? `🚚 *${order.taxRate > 0 ? `Impostos (${order.taxRate}%)` : 'Frete'}:* +${currency} ${order.taxAmount.toFixed(2)}\n` : ''}⭐ *TOTAL GERAL: ${currency} ${order.grandTotal.toFixed(2)}*
 
 ${order.notes ? `📝 *Observações:* ${order.notes}\n` : ''}
 📄 Documento oficial em PDF gerado via ARTEX7.`;

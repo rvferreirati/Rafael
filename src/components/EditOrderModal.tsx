@@ -37,7 +37,8 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
 }) => {
   const [items, setItems] = useState<LineItem[]>([]);
   const [notes, setNotes] = useState<string>('');
-  const [discountRate, setDiscountRate] = useState<number>(0);
+  const [discountValue, setDiscountValue] = useState<number>(0);
+  const [freightValue, setFreightValue] = useState<number>(0);
   const [status, setOrderStatus] = useState<SalesOrder['status']>('confirmed');
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [catalog, setCatalog] = useState<CatalogProduct[]>([]);
@@ -55,7 +56,8 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
         }))
       );
       setNotes(order.notes || '');
-      setDiscountRate(order.discountRate || 0);
+      setDiscountValue(order.discountAmount || 0);
+      setFreightValue(order.taxAmount || 0);
       setOrderStatus(order.status || 'confirmed');
       setSavedSuccess(false);
       setShowCatalogPicker(false);
@@ -67,13 +69,11 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
 
   const currency = company.currency || 'R$';
 
-  // Calculate totals
+  // Calculate totals (Desconto e Frete em valor fixo)
   const subtotal = items.reduce((acc, curr) => acc + (curr.total || 0), 0);
-  const discountAmount = Number(((subtotal * discountRate) / 100).toFixed(2));
-  const taxRate = order.taxRate || 0;
-  const taxableBase = Math.max(0, subtotal - discountAmount);
-  const taxAmount = Number(((taxableBase * taxRate) / 100).toFixed(2));
-  const grandTotal = Number((taxableBase + taxAmount).toFixed(2));
+  const discountAmount = Math.max(0, Number(discountValue) || 0);
+  const taxAmount = Math.max(0, Number(freightValue) || 0);
+  const grandTotal = Number((Math.max(0, subtotal - discountAmount) + taxAmount).toFixed(2));
 
   // Item handlers
   const handleItemQuantityChange = (id: string, delta: number) => {
@@ -167,9 +167,9 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
       items,
       notes,
       status,
-      discountRate,
+      discountRate: 0,
       discountAmount,
-      taxRate,
+      taxRate: 0,
       taxAmount,
       subtotal,
       grandTotal,
@@ -470,29 +470,37 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
                 <span className="font-mono font-bold">{currency} {subtotal.toFixed(2)}</span>
               </div>
 
-              <div className="flex items-center justify-between text-xs text-slate-600">
-                <span className="flex items-center gap-1.5">
-                  Desconto (%):
+              <div className="flex items-center justify-between text-xs text-slate-600 gap-2">
+                <span>Desconto ({currency}):</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-rose-600">-{currency}</span>
                   <input
                     type="number"
                     min="0"
-                    max="100"
-                    value={discountRate}
-                    onChange={(e) => setDiscountRate(Math.max(0, parseFloat(e.target.value) || 0))}
-                    className="w-14 text-center text-xs font-mono border border-slate-200 rounded-md py-0.5"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={discountValue === 0 ? '' : discountValue}
+                    onChange={(e) => setDiscountValue(Math.max(0, parseFloat(e.target.value) || 0))}
+                    className="w-20 text-right text-xs font-mono font-bold border border-slate-200 rounded-md px-2 py-1"
                   />
-                </span>
-                <span className="font-mono text-emerald-700 font-bold">
-                  -{currency} {discountAmount.toFixed(2)}
-                </span>
+                </div>
               </div>
 
-              {taxRate > 0 && (
-                <div className="flex justify-between text-xs text-slate-600">
-                  <span>Impostos ({taxRate}%):</span>
-                  <span className="font-mono font-bold">+{currency} {taxAmount.toFixed(2)}</span>
+              <div className="flex items-center justify-between text-xs text-slate-600 gap-2">
+                <span>Frete ({currency}):</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-slate-500">+{currency}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={freightValue === 0 ? '' : freightValue}
+                    onChange={(e) => setFreightValue(Math.max(0, parseFloat(e.target.value) || 0))}
+                    className="w-20 text-right text-xs font-mono font-bold border border-slate-200 rounded-md px-2 py-1"
+                  />
                 </div>
-              )}
+              </div>
 
               <div className="pt-2 border-t border-slate-200 flex justify-between items-baseline">
                 <span className="text-sm font-bold text-slate-900">Total Atualizado:</span>

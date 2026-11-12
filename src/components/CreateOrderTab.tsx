@@ -173,9 +173,9 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   // Line items (extracted from prints and fully editable)
   const [items, setItems] = useState<LineItem[]>([]);
 
-  // Financials & Notes
-  const [discountRate, setDiscountRate] = useState<number>(0);
-  const [taxRate, setTaxRate] = useState<number>(company.defaultTaxRate ?? 8);
+  // Financials & Notes (Valores fixos em R$, sem porcentagem)
+  const [discountValue, setDiscountValue] = useState<number>(0);
+  const [freightValue, setFreightValue] = useState<number>(0);
   const [orderNotes, setOrderNotes] = useState<string>(
     'Pagamento em até 30 dias via transferência bancária, PIX ou boleto. Garantia e conferência inclusas.'
   );
@@ -836,12 +836,11 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     setActiveStep('items');
   };
 
-  // Calculate totals dynamically
+  // Calculate totals dynamically (Desconto e Frete em valor fixo R$)
   const subtotal = items.reduce((acc, curr) => acc + (curr.total || 0), 0);
-  const discountAmount = subtotal * (discountRate / 100);
-  const taxableAmount = Math.max(0, subtotal - discountAmount);
-  const taxAmount = taxableAmount * (taxRate / 100);
-  const grandTotal = taxableAmount + taxAmount;
+  const discountAmount = Math.max(0, Number(discountValue) || 0);
+  const taxAmount = Math.max(0, Number(freightValue) || 0);
+  const grandTotal = Math.max(0, subtotal - discountAmount) + taxAmount;
 
   // Customer selection hook
   const handleSelectCustomer = (id: string) => {
@@ -992,7 +991,8 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     setCustEmail('');
     setCustPhone('');
     setCustAddress('');
-    setDiscountRate(0);
+    setDiscountValue(0);
+    setFreightValue(0);
     setUploadedPrints([]);
     setRawOcrText('');
     setFeedbackSuccess(null);
@@ -1356,9 +1356,9 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       items,
       notes: orderNotes,
       subtotal,
-      discountRate,
+      discountRate: 0,
       discountAmount,
-      taxRate,
+      taxRate: 0,
       taxAmount,
       grandTotal,
       attachedImageUrl: attachedImages[0] || undefined,
@@ -2900,30 +2900,40 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                 </span>
               </div>
 
-              <div className="flex justify-between items-center text-slate-600">
-                <span>Desconto (%):</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.5"
-                  value={discountRate}
-                  onChange={(e) => setDiscountRate(parseFloat(e.target.value) || 0)}
-                  className="w-20 border border-slate-300 rounded-lg px-2 py-1 text-right text-xs bg-white font-mono"
-                />
+              <div className="flex justify-between items-center text-slate-600 gap-2">
+                <span>Desconto ({company.currency || 'R$'}):</span>
+                <div className="flex items-center border border-slate-300 rounded-lg bg-white overflow-hidden focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-300">
+                  <span className="px-2 py-1 text-[11px] font-bold text-rose-600 bg-rose-50 border-r border-slate-200 select-none">
+                    -{company.currency || 'R$'}
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={discountValue === 0 ? '' : discountValue}
+                    onChange={(e) => setDiscountValue(Math.max(0, parseFloat(e.target.value) || 0))}
+                    className="w-24 px-2 py-1 text-right text-xs bg-white font-mono font-bold text-slate-800 outline-none"
+                  />
+                </div>
               </div>
 
-              <div className="flex justify-between items-center text-slate-600">
-                <span>Taxa / Impostos (%):</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.5"
-                  value={taxRate}
-                  onChange={(e) => setTaxRate(parseFloat(e.target.value) || 0)}
-                  className="w-20 border border-slate-300 rounded-lg px-2 py-1 text-right text-xs bg-white font-mono"
-                />
+              <div className="flex justify-between items-center text-slate-600 gap-2">
+                <span>Frete ({company.currency || 'R$'}):</span>
+                <div className="flex items-center border border-slate-300 rounded-lg bg-white overflow-hidden focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-300">
+                  <span className="px-2 py-1 text-[11px] font-bold text-slate-500 bg-slate-100 border-r border-slate-200 select-none">
+                    +{company.currency || 'R$'}
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={freightValue === 0 ? '' : freightValue}
+                    onChange={(e) => setFreightValue(Math.max(0, parseFloat(e.target.value) || 0))}
+                    className="w-24 px-2 py-1 text-right text-xs bg-white font-mono font-bold text-slate-800 outline-none"
+                  />
+                </div>
               </div>
 
               <div className="flex justify-between items-center pt-2 border-t border-slate-200">
@@ -2932,7 +2942,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                   <span className="block text-[11px] text-slate-400">Pronto para gerar PDF</span>
                 </div>
                 <span className="text-xl font-bold text-indigo-600 font-mono">
-                  {(company.currency || '$')} {grandTotal.toFixed(2)}
+                  {(company.currency || 'R$')} {grandTotal.toFixed(2)}
                 </span>
               </div>
             </div>

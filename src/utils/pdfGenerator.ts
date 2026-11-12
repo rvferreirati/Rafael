@@ -170,16 +170,18 @@ export function generateSalesOrderPDF(order: SalesOrder, company: CompanyProfile
   doc.text(`${currency} ${order.subtotal.toFixed(2)}`, 196, summaryY, { align: 'right' });
   summaryY += 5;
 
-  if (order.discountRate > 0) {
-    doc.text(`Desconto (${order.discountRate}%):`, summaryX, summaryY);
+  if (order.discountAmount > 0) {
+    const discLabel = order.discountRate > 0 ? `Desconto (${order.discountRate}%):` : 'Desconto:';
+    doc.text(discLabel, summaryX, summaryY);
     doc.setTextColor(225, 29, 72);
     doc.text(`-${currency} ${order.discountAmount.toFixed(2)}`, 196, summaryY, { align: 'right' });
     doc.setTextColor(71, 85, 105);
     summaryY += 5;
   }
 
-  if (order.taxRate > 0) {
-    doc.text(`Impostos / Taxas (${order.taxRate}%):`, summaryX, summaryY);
+  if (order.taxAmount > 0) {
+    const freightLabel = order.taxRate > 0 ? `Impostos / Taxas (${order.taxRate}%):` : 'Frete:';
+    doc.text(freightLabel, summaryX, summaryY);
     doc.text(`+${currency} ${order.taxAmount.toFixed(2)}`, 196, summaryY, { align: 'right' });
     summaryY += 5;
   }
