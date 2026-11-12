@@ -62,6 +62,7 @@ import {
 import { loadStoredStock, importOrderItemsFromExcel } from '../utils/stockManager';
 import { CatalogModal } from './CatalogModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
+import { formatCpfCnpj, formatCep, lookupAddressByCep, onlyDigits } from '../utils/masks';
 
 export interface QuickCatalogProduct {
   code: string;
@@ -142,6 +143,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   const [custTaxId, setCustTaxId] = useState<string>('');
   const [custEmail, setCustEmail] = useState<string>('');
   const [custPhone, setCustPhone] = useState<string>('');
+  const [custCep, setCustCep] = useState<string>('');
   const [custAddress, setCustAddress] = useState<string>('');
 
   // Product Database / Catalog State (kept in sync with prop and localStorage)
@@ -848,10 +850,23 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     const found = customers.find((c) => c.id === id);
     if (found) {
       setCustName(found.name);
-      setCustTaxId(found.taxId);
-      setCustEmail(found.email);
-      setCustPhone(found.phone);
-      setCustAddress(found.address);
+      const digits = onlyDigits(found.taxId || '');
+      setCustTaxId(digits.length >= 11 && !/[a-zA-Z]/.test(found.taxId || '') ? formatCpfCnpj(found.taxId) : (found.taxId || ''));
+      setCustEmail(found.email || '');
+      setCustPhone(found.phone || '');
+      setCustCep(found.cep ? formatCep(found.cep) : '');
+      setCustAddress(found.address || '');
+    }
+  };
+
+  const handleCustCepChange = async (rawValue: string) => {
+    const masked = formatCep(rawValue);
+    setCustCep(masked);
+    if (onlyDigits(masked).length === 8 && !custAddress.trim()) {
+      const res = await lookupAddressByCep(masked);
+      if (res?.formatted) {
+        setCustAddress(res.formatted);
+      }
     }
   };
 
@@ -990,6 +1005,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     setCustTaxId('');
     setCustEmail('');
     setCustPhone('');
+    setCustCep('');
     setCustAddress('');
     setDiscountValue(0);
     setFreightValue(0);
@@ -1351,6 +1367,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
         taxId: custTaxId,
         email: custEmail,
         phone: custPhone,
+        cep: custCep || undefined,
         address: custAddress,
       },
       items,
@@ -2794,8 +2811,10 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                 </label>
                 <input
                   type="text"
+                  inputMode="numeric"
+                  maxLength={18}
                   value={custTaxId}
-                  onChange={(e) => setCustTaxId(e.target.value)}
+                  onChange={(e) => setCustTaxId(formatCpfCnpj(e.target.value))}
                   placeholder="00.000.000/0001-00"
                   className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-mono"
                 />
@@ -2827,7 +2846,22 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                 />
               </div>
 
-              <div className="sm:col-span-2 md:col-span-1">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  CEP
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={9}
+                  value={custCep}
+                  onChange={(e) => handleCustCepChange(e.target.value)}
+                  placeholder="00000-000"
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-mono"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
                 <label className="block text-xs font-semibold text-slate-600 mb-1">
                   Endereço de Entrega / Cobrança
                 </label>

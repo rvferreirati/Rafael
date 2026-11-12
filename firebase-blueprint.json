@@ -71,6 +71,7 @@
         "taxId": { "type": "string" },
         "email": { "type": "string" },
         "phone": { "type": "string" },
+        "cep": { "type": "string" },
         "address": { "type": "string" },
         "updatedAt": { "type": "number" }
       },

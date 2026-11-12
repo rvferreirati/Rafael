@@ -15,6 +15,7 @@ export interface Customer {
   taxId: string;
   email: string;
   phone: string;
+  cep?: string;
   address: string;
 }
 
@@ -63,6 +64,7 @@ export interface SalesOrder {
     taxId: string;
     email: string;
     phone?: string;
+    cep?: string;
     address: string;
   };
   items: LineItem[];

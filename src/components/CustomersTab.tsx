@@ -1,6 +1,14 @@
 import React, { useState } from 'react';
-import { Users, Plus, Search, Mail, Phone, MapPin, Edit2, Trash2, X, Check, Cloud, RefreshCw } from 'lucide-react';
+import { Users, Plus, Search, Mail, Phone, MapPin, Edit2, Trash2, X, Check, Cloud, RefreshCw, AlertCircle, Loader2 } from 'lucide-react';
 import { Customer } from '../types';
+import {
+  formatCpfCnpj,
+  formatCep,
+  validateCpfCnpj,
+  isValidCep,
+  lookupAddressByCep,
+  onlyDigits,
+} from '../utils/masks';
 
 interface CustomersTabProps {
   customers: Customer[];
@@ -28,7 +36,9 @@ export const CustomersTab: React.FC<CustomersTabProps> = ({
   const [taxId, setTaxId] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [cep, setCep] = useState('');
   const [address, setAddress] = useState('');
+  const [isLookingUpCep, setIsLookingUpCep] = useState(false);
 
   const handleOpenAdd = () => {
     setEditingCustomer(null);
@@ -36,6 +46,7 @@ export const CustomersTab: React.FC<CustomersTabProps> = ({
     setTaxId('');
     setEmail('');
     setPhone('');
+    setCep('');
     setAddress('');
     setModalOpen(true);
   };
@@ -43,34 +54,70 @@ export const CustomersTab: React.FC<CustomersTabProps> = ({
   const handleOpenEdit = (c: Customer) => {
     setEditingCustomer(c);
     setName(c.name);
-    setTaxId(c.taxId);
-    setEmail(c.email);
-    setPhone(c.phone);
-    setAddress(c.address);
+    const digitsOnly = onlyDigits(c.taxId || '');
+    setTaxId(digitsOnly.length >= 11 && !/[a-zA-Z]/.test(c.taxId || '') ? formatCpfCnpj(c.taxId) : (c.taxId || ''));
+    setEmail(c.email || '');
+    setPhone(c.phone || '');
+    setCep(c.cep ? formatCep(c.cep) : '');
+    setAddress(c.address || '');
     setModalOpen(true);
+  };
+
+  const handleCepChange = async (rawValue: string) => {
+    const masked = formatCep(rawValue);
+    setCep(masked);
+    if (onlyDigits(masked).length === 8) {
+      setIsLookingUpCep(true);
+      try {
+        const res = await lookupAddressByCep(masked);
+        if (res?.formatted && !address.trim()) {
+          setAddress(res.formatted);
+        }
+      } finally {
+        setIsLookingUpCep(false);
+      }
+    }
+  };
+
+  const handleForceCepLookup = async () => {
+    if (!isValidCep(cep)) return;
+    setIsLookingUpCep(true);
+    try {
+      const res = await lookupAddressByCep(cep);
+      if (res?.formatted) {
+        setAddress(res.formatted);
+      }
+    } finally {
+      setIsLookingUpCep(false);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
+    const cleanCep = cep.trim();
+    const cleanTaxId = taxId.trim();
+
     if (editingCustomer) {
       onUpdateCustomer({
         ...editingCustomer,
-        name,
-        taxId,
-        email,
-        phone,
-        address,
+        name: name.trim(),
+        taxId: cleanTaxId,
+        email: email.trim(),
+        phone: phone.trim(),
+        cep: cleanCep,
+        address: address.trim(),
       });
     } else {
       onAddCustomer({
         id: `cust-${Date.now()}`,
-        name,
-        taxId,
-        email,
-        phone,
-        address,
+        name: name.trim(),
+        taxId: cleanTaxId,
+        email: email.trim(),
+        phone: phone.trim(),
+        cep: cleanCep,
+        address: address.trim(),
       });
     }
 
@@ -87,11 +134,14 @@ export const CustomersTab: React.FC<CustomersTabProps> = ({
     }
   };
 
+  const taxIdValidation = validateCpfCnpj(taxId);
+
   const filtered = customers.filter(
     (c) =>
       c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.taxId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.email.toLowerCase().includes(searchTerm.toLowerCase())
+      (c.taxId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.cep || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.email || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -217,10 +267,13 @@ export const CustomersTab: React.FC<CustomersTabProps> = ({
                         <span>{c.email}</span>
                       </div>
                     )}
-                    {c.address && (
+                    {(c.address || c.cep) && (
                       <div className="flex items-start gap-2">
                         <MapPin className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
-                        <span className="text-slate-500 text-[11px]">{c.address}</span>
+                        <span className="text-slate-500 text-[11px]">
+                          {c.cep ? `CEP ${c.cep}${c.address ? ' • ' : ''}` : ''}
+                          {c.address}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -265,10 +318,13 @@ export const CustomersTab: React.FC<CustomersTabProps> = ({
                         {!c.email && !c.phone && <span>—</span>}
                       </td>
                       <td className="py-3.5 px-4 text-xs text-slate-500 max-w-xs truncate">
-                        {c.address ? (
+                        {c.address || c.cep ? (
                           <div className="flex items-center gap-1.5">
                             <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <span className="truncate">{c.address}</span>
+                            <span className="truncate">
+                              {c.cep ? `${c.cep}${c.address ? ' • ' : ''}` : ''}
+                              {c.address}
+                            </span>
                           </div>
                         ) : (
                           '—'
@@ -333,17 +389,86 @@ export const CustomersTab: React.FC<CustomersTabProps> = ({
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  CNPJ / CPF / Tax ID
-                </label>
-                <input
-                  type="text"
-                  value={taxId}
-                  onChange={(e) => setTaxId(e.target.value)}
-                  placeholder="00.000.000/0001-00"
-                  className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    CNPJ / CPF
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={18}
+                    value={taxId}
+                    onChange={(e) => setTaxId(formatCpfCnpj(e.target.value))}
+                    placeholder="00.000.000/0001-00"
+                    className={`w-full border rounded-xl px-3 py-2 text-xs font-mono focus:ring-2 outline-none ${
+                      taxId && !taxIdValidation.valid
+                        ? 'border-amber-300 focus:ring-amber-300 bg-amber-50/30'
+                        : taxId && taxIdValidation.valid && taxIdValidation.type
+                        ? 'border-emerald-300 focus:ring-emerald-300 bg-emerald-50/20'
+                        : 'border-slate-300 focus:ring-indigo-500'
+                    }`}
+                  />
+                  {taxId && taxIdValidation.message && (
+                    <span
+                      className={`mt-1 text-[10px] font-semibold flex items-center gap-1 ${
+                        taxIdValidation.valid ? 'text-emerald-700' : 'text-amber-700'
+                      }`}
+                    >
+                      {taxIdValidation.valid ? (
+                        <Check className="w-3 h-3 shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-3 h-3 shrink-0" />
+                      )}
+                      {taxIdValidation.message}
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    CEP
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={9}
+                      value={cep}
+                      onChange={(e) => handleCepChange(e.target.value)}
+                      placeholder="00000-000"
+                      className={`w-full border rounded-xl px-3 py-2 text-xs font-mono focus:ring-2 outline-none ${
+                        cep && isValidCep(cep)
+                          ? 'border-emerald-300 focus:ring-emerald-300 bg-emerald-50/20'
+                          : 'border-slate-300 focus:ring-indigo-500'
+                      }`}
+                    />
+                    {isValidCep(cep) && (
+                      <button
+                        type="button"
+                        onClick={handleForceCepLookup}
+                        disabled={isLookingUpCep}
+                        className="px-2.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-[11px] font-bold shrink-0 cursor-pointer disabled:opacity-60"
+                        title="Preencher endereço pelo CEP"
+                      >
+                        {isLookingUpCep ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Buscar'}
+                      </button>
+                    )}
+                  </div>
+                  {cep && (
+                    <span
+                      className={`mt-1 text-[10px] font-semibold flex items-center gap-1 ${
+                        isValidCep(cep) ? 'text-emerald-700' : 'text-slate-400'
+                      }`}
+                    >
+                      {isLookingUpCep
+                        ? 'Buscando endereço...'
+                        : isValidCep(cep)
+                        ? 'CEP completo (00000-000)'
+                        : `${onlyDigits(cep).length}/8 dígitos`}
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

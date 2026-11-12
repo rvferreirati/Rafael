@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Building2, Save, CheckCircle2, Cloud, RefreshCw } from 'lucide-react';
 import { CompanyProfile } from '../types';
+import { formatCpfCnpj } from '../utils/masks';
 
 interface SettingsTabProps {
   company: CompanyProfile;
@@ -133,15 +134,17 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ company, onSaveCompany
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                CNPJ / CPF / Tax ID *
+                CNPJ / CPF *
               </label>
               <input
                 type="text"
+                inputMode="numeric"
+                maxLength={18}
                 required
                 value={taxId}
-                onChange={(e) => setTaxId(e.target.value)}
-                placeholder="Ex: 00.123.456/0001-90"
-                className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-xs sm:text-sm focus:ring-2 focus:ring-indigo-500 outline-none min-h-[44px]"
+                onChange={(e) => setTaxId(formatCpfCnpj(e.target.value))}
+                placeholder="00.000.000/0000-00"
+                className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-mono focus:ring-2 focus:ring-indigo-500 outline-none min-h-[44px]"
               />
             </div>
 

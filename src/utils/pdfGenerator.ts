@@ -100,8 +100,12 @@ export function generateSalesOrderPDF(order: SalesOrder, company: CompanyProfile
     doc.text(customerMeta, 18, 65);
   }
 
-  if (order.customer.address) {
-    const addressLine = doc.splitTextToSize(`Endereço: ${order.customer.address}`, 174);
+  if (order.customer.address || order.customer.cep) {
+    const addrText = [
+      order.customer.address ? `Endereço: ${order.customer.address}` : '',
+      order.customer.cep ? `CEP: ${order.customer.cep}` : '',
+    ].filter(Boolean).join('   |   ');
+    const addressLine = doc.splitTextToSize(addrText, 174);
     doc.text(addressLine, 18, 70);
   }
 
