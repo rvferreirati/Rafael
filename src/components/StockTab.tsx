@@ -41,6 +41,7 @@ import {
   deleteBatchStockFromFirestore,
   clearAllStockFromFirestore,
   replaceStockInFirestore,
+  saveStockMovementsToFirestore,
 } from '../services/firestoreSync';
 import { Cloud, CheckCircle, Wifi } from 'lucide-react';
 
@@ -48,12 +49,14 @@ interface StockTabProps {
   stockList: StockItem[];
   onUpdateStock: (newStock: StockItem[]) => void;
   company: CompanyProfile;
+  stockMovements?: StockMovement[];
 }
 
 export const StockTab: React.FC<StockTabProps> = ({
   stockList,
   onUpdateStock,
   company,
+  stockMovements,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -369,6 +372,9 @@ export const StockTab: React.FC<StockTabProps> = ({
 
     const movs = loadStoredStockMovements();
     saveStoredStockMovements([mov, ...movs]);
+    saveStockMovementsToFirestore([mov]).catch((err) =>
+      console.warn('Aviso ao sincronizar movimentação manual:', err)
+    );
 
     onUpdateStock(updated);
     saveStoredStock(updated);
@@ -506,7 +512,7 @@ export const StockTab: React.FC<StockTabProps> = ({
   };
 
   const handleOpenMovements = () => {
-    const movs = loadStoredStockMovements();
+    const movs = stockMovements && stockMovements.length > 0 ? stockMovements : loadStoredStockMovements();
     setMovements(movs);
     setIsMovementsModalOpen(true);
   };

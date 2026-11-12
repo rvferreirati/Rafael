@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, Plus, Search, Mail, Phone, MapPin, Edit2, Trash2, X, Check } from 'lucide-react';
+import { Users, Plus, Search, Mail, Phone, MapPin, Edit2, Trash2, X, Check, Cloud, RefreshCw } from 'lucide-react';
 import { Customer } from '../types';
 
 interface CustomersTabProps {
@@ -7,6 +7,7 @@ interface CustomersTabProps {
   onAddCustomer: (customer: Customer) => void;
   onUpdateCustomer: (customer: Customer) => void;
   onDeleteCustomer: (id: string) => void;
+  onSyncCustomers?: () => Promise<void> | void;
 }
 
 export const CustomersTab: React.FC<CustomersTabProps> = ({
@@ -14,11 +15,13 @@ export const CustomersTab: React.FC<CustomersTabProps> = ({
   onAddCustomer,
   onUpdateCustomer,
   onDeleteCustomer,
+  onSyncCustomers,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Form State
   const [name, setName] = useState('');
@@ -74,6 +77,16 @@ export const CustomersTab: React.FC<CustomersTabProps> = ({
     setModalOpen(false);
   };
 
+  const handleManualSync = async () => {
+    if (!onSyncCustomers) return;
+    setIsSyncing(true);
+    try {
+      await onSyncCustomers();
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const filtered = customers.filter(
     (c) =>
       c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -82,7 +95,42 @@ export const CustomersTab: React.FC<CustomersTabProps> = ({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* Cloud Sync Banner */}
+      <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 border border-emerald-200/80 rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+            <Cloud className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <h4 className="text-xs sm:text-sm font-black text-slate-800">
+                Clientes Sincronizados na Nuvem ({customers.length} cadastrados)
+              </h4>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                Tempo Real
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-600 mt-0.5">
+              Qualquer cliente adicionado, editado ou excluído aparece instantaneamente em todos os seus dispositivos.
+            </p>
+          </div>
+        </div>
+
+        {onSyncCustomers && (
+          <button
+            type="button"
+            onClick={handleManualSync}
+            disabled={isSyncing}
+            className="self-start sm:self-center px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-75"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>{isSyncing ? 'Sincronizando...' : 'Forçar Envio Nuvem'}</span>
+          </button>
+        )}
+      </div>
+
       {/* Top Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>

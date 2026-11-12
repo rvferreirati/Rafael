@@ -246,6 +246,12 @@ export const deductStockForOrder = (
   saveStoredStockMovements([...movements, ...existingMovements]);
   pushServerStock(updatedStock);
 
+  if (movements.length > 0) {
+    import('../services/firestoreSync')
+      .then(({ saveStockMovementsToFirestore }) => saveStockMovementsToFirestore(movements))
+      .catch((err) => console.warn('Aviso ao sincronizar movimentações:', err));
+  }
+
   return { success: true, updatedStock, movements, deductedItems };
 };
 
@@ -317,6 +323,12 @@ export const restoreStockForOrder = (
   const existingMovements = loadStoredStockMovements();
   saveStoredStockMovements([...movements, ...existingMovements]);
   pushServerStock(updatedStock);
+
+  if (movements.length > 0) {
+    import('../services/firestoreSync')
+      .then(({ saveStockMovementsToFirestore }) => saveStockMovementsToFirestore(movements))
+      .catch((err) => console.warn('Aviso ao sincronizar estornos:', err));
+  }
 
   return { success: true, updatedStock, movements, restoredItems };
 };

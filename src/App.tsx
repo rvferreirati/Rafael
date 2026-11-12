@@ -9,21 +9,19 @@ import { QuickStartModal } from './components/QuickStartModal';
 import { CatalogModal } from './components/CatalogModal';
 import { SyncModal } from './components/SyncModal';
 import { LoginScreen } from './components/LoginScreen';
-import { Customer, SalesOrder, CompanyProfile, StockItem } from './types';
+import { Customer, SalesOrder, CompanyProfile, StockItem, StockMovement } from './types';
 import {
   CatalogProduct,
   DEFAULT_CATALOG,
   loadStoredCatalog,
   saveStoredCatalog,
-  fetchServerCatalog,
   pushServerCatalog,
-  syncCatalogWithServer,
   mergeCatalogProducts
 } from './utils/productCatalog';
 import {
   loadStoredStock,
   saveStoredStock,
-  fetchServerStock,
+  loadStoredStockMovements,
   pushServerStock,
   deductStockForOrder,
   restoreStockForOrder,
@@ -31,11 +29,21 @@ import {
 import {
   subscribeToStock,
   pushAllStockToFirestore,
+  subscribeToStockMovements,
   subscribeToOrders,
   saveOrderToFirestore,
+  pushAllOrdersToFirestore,
   deleteOrderFromFirestore,
+  subscribeToCustomers,
+  saveCustomerToFirestore,
+  deleteCustomerFromFirestore,
+  pushAllCustomersToFirestore,
+  subscribeToCompanyProfile,
+  saveCompanyToFirestore,
+  subscribeToCatalog,
+  pushAllCatalogToFirestore,
 } from './services/firestoreSync';
-import { HelpCircle, Sparkles } from 'lucide-react';
+import { HelpCircle } from 'lucide-react';
 
 const STORAGE_KEYS = {
   CUSTOMERS: 'so_pro_customers_v1',
@@ -131,72 +139,12 @@ export default function App() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [catalog, setCatalog] = useState<CatalogProduct[]>(loadStoredCatalog);
   const [stockList, setStockList] = useState<StockItem[]>(loadStoredStock);
+  const [stockMovements, setStockMovements] = useState<StockMovement[]>(loadStoredStockMovements);
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Open the dedicated Sync Modal with real-time PC & Mobile status
-  const handleOpenSyncModal = () => {
-    setIsSyncModalOpen(true);
-  };
-
-  useEffect(() => {
-    // 1. Real-time Cloud Firestore Stock Sync (instant mobile & PC updates)
-    const unsubStock = subscribeToStock((cloudStock) => {
-      if (Array.isArray(cloudStock)) {
-        setStockList(cloudStock);
-      }
-    });
-
-    // 2. Real-time Cloud Firestore Orders Sync
-    const unsubOrders = subscribeToOrders((cloudOrders) => {
-      if (Array.isArray(cloudOrders) && cloudOrders.length > 0) {
-        setOrders(cloudOrders);
-      }
-    });
-
-    // If local catalog on PC has fewer than 63 products, upgrade to full catalog
-    if (catalog.length < DEFAULT_CATALOG.length) {
-      const merged = mergeCatalogProducts(DEFAULT_CATALOG, catalog);
-      setCatalog(merged);
-      saveStoredCatalog(merged);
-    }
-
-    // Secondary fallback sync for catalog only
-    fetchServerCatalog().then((serverCat) => {
-      if (serverCat && serverCat.length > 0) {
-        setCatalog(serverCat);
-      }
-    });
-
-    const handleFocus = () => {
-      fetchServerCatalog().then((serverCat) => {
-        if (serverCat && serverCat.length > 0) {
-          setCatalog(serverCat);
-        }
-      });
-    };
-    window.addEventListener('focus', handleFocus);
-    return () => {
-      unsubStock();
-      unsubOrders();
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, []);
-
-  const handleUpdateCatalog = (newCatalog: CatalogProduct[]) => {
-    setCatalog(newCatalog);
-    pushServerCatalog(newCatalog);
-  };
-
-  const handleUpdateStock = (newStock: StockItem[]) => {
-    setStockList(newStock);
-    saveStoredStock(newStock);
-    pushServerStock(newStock);
-    pushAllStockToFirestore(newStock);
-  };
-
-  // Persistence
+  // Persistence States
   const [customers, setCustomers] = useState<Customer[]>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
@@ -223,6 +171,84 @@ export default function App() {
       return DEFAULT_COMPANY;
     }
   });
+
+  // Open the dedicated Sync Modal with real-time PC & Mobile status
+  const handleOpenSyncModal = () => {
+    setIsSyncModalOpen(true);
+  };
+
+  useEffect(() => {
+    // Garante catálogo base completo antes do bootstrap inicial na nuvem
+    let initialCatalog = catalog;
+    if (initialCatalog.length < DEFAULT_CATALOG.length) {
+      initialCatalog = mergeCatalogProducts(DEFAULT_CATALOG, initialCatalog);
+      setCatalog(initialCatalog);
+      saveStoredCatalog(initialCatalog);
+    }
+
+    // 1. Real-time Cloud Firestore Stock Sync (instant mobile & PC updates)
+    const unsubStock = subscribeToStock((cloudStock) => {
+      if (Array.isArray(cloudStock)) {
+        setStockList(cloudStock);
+      }
+    });
+
+    // 2. Real-time Cloud Firestore Stock Movements Sync
+    const unsubMovements = subscribeToStockMovements((cloudMovements) => {
+      if (Array.isArray(cloudMovements)) {
+        setStockMovements(cloudMovements);
+      }
+    });
+
+    // 3. Real-time Cloud Firestore Orders Sync (supports deletions including 0 items)
+    const unsubOrders = subscribeToOrders((cloudOrders) => {
+      if (Array.isArray(cloudOrders)) {
+        setOrders(cloudOrders);
+      }
+    }, orders);
+
+    // 4. Real-time Cloud Firestore Customers Sync
+    const unsubCustomers = subscribeToCustomers((cloudCustomers) => {
+      if (Array.isArray(cloudCustomers)) {
+        setCustomers(cloudCustomers);
+      }
+    }, customers);
+
+    // 5. Real-time Cloud Firestore Company Profile Sync
+    const unsubCompany = subscribeToCompanyProfile((cloudCompany) => {
+      setCompany(cloudCompany);
+    }, company);
+
+    // 6. Real-time Cloud Firestore Catalog Sync
+    const unsubCatalog = subscribeToCatalog((cloudCatalog) => {
+      if (Array.isArray(cloudCatalog) && cloudCatalog.length > 0) {
+        setCatalog(cloudCatalog);
+      }
+    }, initialCatalog);
+
+    return () => {
+      unsubStock();
+      unsubMovements();
+      unsubOrders();
+      unsubCustomers();
+      unsubCompany();
+      unsubCatalog();
+    };
+  }, []);
+
+  const handleUpdateCatalog = (newCatalog: CatalogProduct[]) => {
+    setCatalog(newCatalog);
+    saveStoredCatalog(newCatalog);
+    pushServerCatalog(newCatalog);
+    pushAllCatalogToFirestore(newCatalog);
+  };
+
+  const handleUpdateStock = (newStock: StockItem[]) => {
+    setStockList(newStock);
+    saveStoredStock(newStock);
+    pushServerStock(newStock);
+    pushAllStockToFirestore(newStock);
+  };
 
   // Save changes to localStorage
   useEffect(() => {
@@ -302,17 +328,54 @@ export default function App() {
     saveOrderToFirestore(updatedOrder);
   };
 
-  // Customer Handlers
+  // Customer Handlers (synced with Cloud Firestore)
   const handleAddCustomer = (newCust: Customer) => {
     setCustomers((prev) => [newCust, ...prev]);
+    saveCustomerToFirestore(newCust);
   };
 
   const handleUpdateCustomer = (updatedCust: Customer) => {
     setCustomers((prev) => prev.map((c) => (c.id === updatedCust.id ? updatedCust : c)));
+    saveCustomerToFirestore(updatedCust);
   };
 
   const handleDeleteCustomer = (id: string) => {
     setCustomers((prev) => prev.filter((c) => c.id !== id));
+    deleteCustomerFromFirestore(id);
+  };
+
+  // Company Handler (synced with Cloud Firestore)
+  const handleSaveCompany = (updatedCompany: CompanyProfile) => {
+    setCompany(updatedCompany);
+    saveCompanyToFirestore(updatedCompany);
+  };
+
+  // Manual Cloud Sync Triggers per Tab & Global
+  const handleSyncCustomers = async () => {
+    await pushAllCustomersToFirestore(customers);
+  };
+
+  const handleSyncOrders = async () => {
+    await pushAllOrdersToFirestore(orders);
+  };
+
+  const handleSyncCompany = async () => {
+    await saveCompanyToFirestore(company);
+  };
+
+  const handleSyncAllCloud = async () => {
+    setIsSyncing(true);
+    try {
+      await Promise.all([
+        pushAllStockToFirestore(stockList),
+        pushAllCustomersToFirestore(customers),
+        pushAllOrdersToFirestore(orders),
+        saveCompanyToFirestore(company),
+        pushAllCatalogToFirestore(catalog),
+      ]);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // User Authentication State (Arnaldo / Rafael - Senha: 7284)
@@ -388,6 +451,7 @@ export default function App() {
             stockList={stockList}
             onUpdateStock={handleUpdateStock}
             company={company}
+            stockMovements={stockMovements}
           />
         )}
 
@@ -397,6 +461,7 @@ export default function App() {
             onAddCustomer={handleAddCustomer}
             onUpdateCustomer={handleUpdateCustomer}
             onDeleteCustomer={handleDeleteCustomer}
+            onSyncCustomers={handleSyncCustomers}
           />
         )}
 
@@ -406,13 +471,15 @@ export default function App() {
             company={company}
             onDeleteOrder={handleDeleteOrder}
             onUpdateOrder={handleUpdateOrder}
+            onSyncOrders={handleSyncOrders}
           />
         )}
 
         {activeTab === 'settings' && (
           <SettingsTab
             company={company}
-            onSaveCompany={setCompany}
+            onSaveCompany={handleSaveCompany}
+            onSyncCompany={handleSyncCompany}
           />
         )}
       </main>
@@ -466,6 +533,11 @@ export default function App() {
         onClose={() => setIsSyncModalOpen(false)}
         localCatalog={catalog}
         onUpdateCatalog={handleUpdateCatalog}
+        stockCount={stockList.length}
+        customersCount={customers.length}
+        ordersCount={orders.length}
+        companyName={company.name}
+        onSyncAllToCloud={handleSyncAllCloud}
       />
     </div>
   );
