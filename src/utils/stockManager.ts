@@ -200,6 +200,8 @@ export const deductStockForOrder = (
 
     const stockIndex = updatedStock.findIndex((st) => {
       const stCode = (st.code || '').replace(/^#/, '').trim().toLowerCase();
+      const stBarcode = (st.barcode || '').trim().toLowerCase();
+      if (stBarcode && cleanItemCode && stBarcode === cleanItemCode) return true;
       if (stCode && cleanItemCode && stCode === cleanItemCode) return true;
       if (cleanItemCode && cleanItemCode.length >= 2 && (stCode.endsWith(cleanItemCode) || cleanItemCode.endsWith(stCode))) return true;
       return st.name.trim().toLowerCase() === cleanItemName;
@@ -278,6 +280,8 @@ export const restoreStockForOrder = (
 
     const stockIndex = updatedStock.findIndex((st) => {
       const stCode = (st.code || '').replace(/^#/, '').trim().toLowerCase();
+      const stBarcode = (st.barcode || '').trim().toLowerCase();
+      if (stBarcode && cleanItemCode && stBarcode === cleanItemCode) return true;
       if (stCode && cleanItemCode && stCode === cleanItemCode) return true;
       if (cleanItemCode && cleanItemCode.length >= 2 && (stCode.endsWith(cleanItemCode) || cleanItemCode.endsWith(stCode))) return true;
       return st.name.trim().toLowerCase() === cleanItemName;
@@ -342,6 +346,7 @@ export const exportStockToExcel = (stockList: StockItem[], filename = 'Controle_
 
     return {
       'Código / SKU': item.code || '-',
+      'Código de Barras': item.barcode || '',
       'Descrição do Produto': item.name,
       'Em Estoque': item.currentStock,
       'Preço Custo (R$)': item.costPrice,
@@ -361,6 +366,7 @@ export const exportStockToExcel = (stockList: StockItem[], filename = 'Controle_
   // Set column widths for clean readability
   ws['!cols'] = [
     { wch: 14 }, // Código
+    { wch: 18 }, // Código de Barras
     { wch: 42 }, // Descrição
     { wch: 14 }, // Em Estoque
     { wch: 16 }, // Preço Custo
@@ -409,7 +415,12 @@ export const importStockFromExcel = async (
             );
           };
 
-          const codeKey = findKey(['cod', 'sku', 'codigo', 'ref']);
+          const barcodeKey = findKey(['barra', 'barras', 'barcode', 'ean', 'gtin']);
+          const codeKey = keys.find((k) => {
+            if (k === barcodeKey) return false;
+            const norm = k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            return ['cod', 'sku', 'codigo', 'ref'].some((c) => norm.includes(c));
+          });
           const nameKey = findKey(['descri', 'nome', 'produto', 'item', 'mercadoria']);
           const stockKey = findKey(['estoque', 'em estoque', 'saldo', 'qtd', 'quantidade']);
           const costKey = findKey(['custo', 'preco custo', 'preco de custo', 'valor custo']);
@@ -419,9 +430,10 @@ export const importStockFromExcel = async (
           const minKey = findKey(['minimo', 'min']);
 
           const rawCode = codeKey ? String(row[codeKey]).trim() : '';
+          const rawBarcode = barcodeKey ? String(row[barcodeKey]).trim() : '';
           const rawName = nameKey ? String(row[nameKey]).trim() : '';
 
-          if (!rawName && !rawCode) return; // Skip blank rows
+          if (!rawName && !rawCode && !rawBarcode) return; // Skip blank rows
 
           const parseNumber = (val: any, fallback = 0) => {
             if (typeof val === 'number') return val;
@@ -447,7 +459,8 @@ export const importStockFromExcel = async (
           importedItems.push({
             id: `stock-imp-${Date.now()}-${idx}`,
             code: rawCode.replace(/^#/, ''),
-            name: rawName || `Produto ${rawCode}`,
+            barcode: rawBarcode || undefined,
+            name: rawName || `Produto ${rawCode || rawBarcode}`,
             currentStock,
             minStock,
             costPrice: Math.round(cost * 100) / 100,
@@ -554,6 +567,8 @@ export const importOrderItemsFromExcel = async (
 
           const stockMatch = stockCatalog.find((st) => {
             const stCode = (st.code || '').replace(/^#/, '').trim().toLowerCase();
+            const stBarcode = (st.barcode || '').trim().toLowerCase();
+            if (cleanCode && stBarcode && stBarcode === cleanCode) return true;
             if (cleanCode && stCode && stCode === cleanCode) return true;
             if (cleanName && st.name.trim().toLowerCase() === cleanName) return true;
             if (cleanName && cleanName.length >= 4 && st.name.trim().toLowerCase().includes(cleanName)) return true;

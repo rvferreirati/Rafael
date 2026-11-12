@@ -61,6 +61,7 @@ import {
 } from '../utils/productCatalog';
 import { loadStoredStock, importOrderItemsFromExcel } from '../utils/stockManager';
 import { CatalogModal } from './CatalogModal';
+import { BarcodeScannerModal } from './BarcodeScannerModal';
 
 export interface QuickCatalogProduct {
   code: string;
@@ -263,6 +264,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   }, [propStockList]);
 
   type EnrichedCatalogProduct = CatalogProduct & {
+    barcode?: string;
     currentStock?: number;
     wholesalePrice?: number;
     retailPrice?: number;
@@ -274,6 +276,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
   const [matchingProducts, setMatchingProducts] = useState<EnrichedCatalogProduct[]>([]);
   const [fastEntryFeedback, setFastEntryFeedback] = useState<string | null>(null);
   const fastCodeInputRef = useRef<HTMLInputElement>(null);
+  const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState<boolean>(false);
 
   // Batch Code Entry Modal States
   const [isBatchCodeModalOpen, setIsBatchCodeModalOpen] = useState<boolean>(false);
@@ -307,6 +310,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
 
       const pCodeRaw = (st.code || '').trim();
       const pCodeClean = pCodeRaw.replace(/^#/, '').replace(/^COD:?\s*/i, '').replace(/^SKU:?\s*/i, '').trim().toLowerCase();
+      const pBarcode = (st.barcode || '').trim().toLowerCase();
       const pNormName = normalizeForSearch(st.name);
       const pNum = parseInt(pCodeClean, 10);
 
@@ -314,8 +318,12 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
 
       let score = 0;
 
+      // 0. Exact Barcode match (highest priority for EAN/USB/Camera scanner)
+      if (pBarcode && pBarcode === cleanCode) {
+        score = 1050;
+      }
       // 1. Exact code match (e.g. "47", "10", "237")
-      if (pCodeClean && pCodeClean !== '-' && pCodeClean === cleanCode) {
+      else if (pCodeClean && pCodeClean !== '-' && pCodeClean === cleanCode) {
         score = 1000;
       }
       // 2. Pure number code match (e.g. "010" vs "10")
@@ -326,35 +334,47 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       else if (pNormName === normQuery) {
         score = 900;
       }
-      // 4. Code starts with query (e.g. typing "1" gives "10", "11", "12")
+      // 4. Barcode starts with query
+      else if (pBarcode && pBarcode.startsWith(cleanCode)) {
+        score = 880;
+      }
+      // 5. Code starts with query (e.g. typing "1" gives "10", "11", "12")
       else if (pCodeClean && pCodeClean !== '-' && pCodeClean.startsWith(cleanCode)) {
         score = 850;
       }
-      // 5. Code ENDS with query (Last digits of code, e.g. "46" matches "#346", "37" matches "#237", "7" matches "#47")
+      // 6. Barcode ends with query
+      else if (pBarcode && cleanCode.length >= 2 && pBarcode.endsWith(cleanCode)) {
+        score = 845;
+      }
+      // 7. Code ENDS with query (Last digits of code, e.g. "46" matches "#346", "37" matches "#237", "7" matches "#47")
       else if (pCodeClean && pCodeClean !== '-' && cleanCode.length >= 1 && pCodeClean.endsWith(cleanCode)) {
         score = 840;
       }
-      // 6. Number ends with query digits
+      // 8. Number ends with query digits
       else if (isPureNumber && !isNaN(pNum) && pCodeClean !== '-' && String(pNum).endsWith(String(numClean))) {
         score = 830;
       }
-      // 7. Code contains query anywhere
+      // 9. Barcode contains query anywhere
+      else if (pBarcode && cleanCode.length >= 3 && pBarcode.includes(cleanCode)) {
+        score = 815;
+      }
+      // 10. Code contains query anywhere
       else if (pCodeClean && pCodeClean !== '-' && pCodeClean.includes(cleanCode)) {
         score = 800;
       }
-      // 8. Name starts with query (e.g. "lixa...")
+      // 11. Name starts with query (e.g. "lixa...")
       else if (pNormName.startsWith(normQuery)) {
         score = 700;
       }
-      // 9. Name contains query as a distinct word or substring (e.g. "mini lixa buffer")
+      // 12. Name contains query as a distinct word or substring (e.g. "mini lixa buffer")
       else if (pNormName.includes(normQuery)) {
         score = 500;
       }
-      // 10. Product name contains the code digits
+      // 13. Product name contains the code digits
       else if (cleanCode.length >= 2 && pNormName.includes(cleanCode)) {
         score = 450;
       }
-      // 11. Token matching (every word in query is in product name)
+      // 14. Token matching (every word in query is in product name)
       else {
         const tokens = normQuery.split(/\s+/).filter((t) => t.length >= 2);
         if (tokens.length > 1 && tokens.every((tok) => pNormName.includes(tok))) {
@@ -368,6 +388,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
           product: {
             id: st.id,
             code: st.code,
+            barcode: st.barcode,
             name: st.name,
             price: effectivePrice,
             currentStock: st.currentStock,
@@ -398,9 +419,11 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
     const cleanCode = (item.code || '').replace(/^#/, '').replace(/^COD:?\s*/i, '').replace(/^SKU:?\s*/i, '').trim().toLowerCase();
     const numCode = parseInt(cleanCode, 10);
 
-    // 1. Match by clean code, exact numeric code or ending digits (e.g. 47 vs 9200047)
+    // 1. Match by barcode, clean code, exact numeric code or ending digits (e.g. 47 vs 9200047)
     if (cleanCode && cleanCode !== '-') {
       const match = activeStock.find((st) => {
+        const stBarcode = (st.barcode || '').trim().toLowerCase();
+        if (stBarcode && stBarcode === cleanCode) return true;
         const stClean = (st.code || '').replace(/^#/, '').replace(/^COD:?\s*/i, '').replace(/^SKU:?\s*/i, '').trim().toLowerCase();
         if (stClean === cleanCode) return true;
         if (!isNaN(numCode)) {
@@ -446,6 +469,48 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
       `✓ Adicionado: ${itemCode ? `[${itemCode}] ` : ''}${product.name} (+${qty} un • ${priceType === 'wholesale' ? 'Atacado' : 'Varejo'} R$ ${(qty * product.price).toFixed(2).replace('.', ',')})`
     );
     setTimeout(() => setFastEntryFeedback(null), 3000);
+  };
+
+  const handleBarcodeScanned = (scannedCode: string) => {
+    const clean = scannedCode.trim();
+    if (!clean) return;
+    const lower = clean.toLowerCase();
+    const matches = searchAllCatalogProducts(clean);
+
+    const exactBarcodeOrSingle =
+      matches.find((m) => (m.barcode || '').trim().toLowerCase() === lower) ||
+      matches.find((m) => (m.code || '').replace(/^#/, '').trim().toLowerCase() === lower) ||
+      (matches.length === 1 ? matches[0] : null);
+
+    if (exactBarcodeOrSingle) {
+      const qty = Math.max(1, Number(fastQuantityInput) || 1);
+      const itemCode =
+        exactBarcodeOrSingle.code && exactBarcodeOrSingle.code !== '-'
+          ? exactBarcodeOrSingle.code
+          : exactBarcodeOrSingle.barcode || clean;
+      handleAddItem(itemCode, exactBarcodeOrSingle.name, qty, exactBarcodeOrSingle.price);
+      setFastEntryFeedback(
+        `✓ Lido via Código de Barras: ${exactBarcodeOrSingle.name} (+${qty} un • R$ ${(qty * exactBarcodeOrSingle.price).toFixed(2).replace('.', ',')})`
+      );
+      setFastCodeInput('');
+      setMatchingProducts([]);
+      setMatchedCatalogProduct(null);
+      setFastQuantityInput(1);
+      setTimeout(() => setFastEntryFeedback(null), 3500);
+    } else if (matches.length > 1) {
+      setFastCodeInput(clean);
+      setMatchingProducts(matches);
+      setMatchedCatalogProduct(matches[0]);
+    } else {
+      setFastCodeInput(clean);
+      setMatchingProducts([]);
+      setMatchedCatalogProduct(null);
+      setFastEntryFeedback(
+        `Nenhum item encontrado com código de barras "${clean}" no Estoque. Verifique o cadastro na aba Estoque.`
+      );
+      setTimeout(() => setFastEntryFeedback(null), 4000);
+    }
+    setActiveStep('items');
   };
 
   const handleAddAllMatchingProducts = () => {
@@ -1479,6 +1544,14 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
               </button>
               <button
                 type="button"
+                onClick={() => setIsBarcodeScannerOpen(true)}
+                className="flex-1 sm:flex-none px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer"
+              >
+                <Barcode className="w-4 h-4 text-emerald-400" />
+                <span>Ler Cód. Barras</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   setIsBatchCodeModalOpen(true);
                   setActiveStep('items');
@@ -1885,7 +1958,7 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 leading-relaxed">
-                    Digite o código da planilha (ex: <strong>9200047</strong>), apenas os <strong>últimos números</strong> (ex: digite <strong>46</strong> para achar 9200046, <strong>37</strong> para 92000237) ou o <strong>nome do produto</strong>.
+                    Digite ou bipe o <strong>código de barras</strong> (câmera ou leitor USB), o código da planilha (ex: <strong>9200047</strong>, ou apenas <strong>46</strong> / <strong>37</strong>) ou o <strong>nome do produto</strong>.
                   </p>
                 </div>
               </div>
@@ -1901,18 +1974,29 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
             </div>
 
             <form onSubmit={handleAddProductByCode} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
-              <div className="relative flex-1">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                  <Search className="w-4 h-4 text-indigo-500" />
+              <div className="flex items-center gap-2 flex-1">
+                <div className="relative flex-1">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <Search className="w-4 h-4 text-indigo-500" />
+                  </div>
+                  <input
+                    ref={fastCodeInputRef}
+                    type="text"
+                    value={fastCodeInput}
+                    onChange={(e) => handleFastCodeChange(e.target.value)}
+                    placeholder="Bipe o cód. de barras, código (ex: 47) ou nome..."
+                    className="w-full pl-9 pr-3 py-2.5 border-2 border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 rounded-xl text-xs sm:text-sm font-semibold bg-white outline-none shadow-2xs transition-all placeholder:text-slate-400 min-h-[44px]"
+                  />
                 </div>
-                <input
-                  ref={fastCodeInputRef}
-                  type="text"
-                  value={fastCodeInput}
-                  onChange={(e) => handleFastCodeChange(e.target.value)}
-                  placeholder="Digite o código (ex: 47, 9200047) ou o nome..."
-                  className="w-full pl-9 pr-3 py-2.5 border-2 border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 rounded-xl text-xs sm:text-sm font-semibold bg-white outline-none shadow-2xs transition-all placeholder:text-slate-400 min-h-[44px]"
-                />
+                <button
+                  type="button"
+                  onClick={() => setIsBarcodeScannerOpen(true)}
+                  className="px-3 py-2.5 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer shrink-0 min-h-[44px]"
+                  title="Abrir câmera para ler código de barras do produto"
+                >
+                  <Barcode className="w-4 h-4 text-emerald-400" />
+                  <span className="hidden sm:inline">Ler Barras</span>
+                </button>
               </div>
 
               <div className="flex items-center gap-2">
@@ -1995,6 +2079,13 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
                             ) : (
                               <span className="text-[10px] text-slate-500 font-semibold px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 shrink-0">
                                 Sem cód
+                              </span>
+                            )}
+
+                            {p.barcode && (
+                              <span className="inline-flex items-center gap-1 font-mono font-semibold text-[10px] sm:text-[11px] px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 border border-indigo-200 shrink-0">
+                                <Barcode className="w-3 h-3 shrink-0" />
+                                <span>{p.barcode}</span>
                               </span>
                             )}
 
@@ -3174,6 +3265,15 @@ export const CreateOrderTab: React.FC<CreateOrderTabProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal: Leitor de Código de Barras (Câmera / USB) para Pedido */}
+      <BarcodeScannerModal
+        isOpen={isBarcodeScannerOpen}
+        onClose={() => setIsBarcodeScannerOpen(false)}
+        title="Ler Código de Barras para o Pedido"
+        subtitle="Aponte a câmera ou bipe com o leitor para inserir o item automaticamente"
+        onScan={handleBarcodeScanned}
+      />
     </div>
   );
 };

@@ -7,6 +7,7 @@
       "properties": {
         "id": { "type": "string" },
         "code": { "type": "string" },
+        "barcode": { "type": "string" },
         "name": { "type": "string" },
         "currentStock": { "type": "number" },
         "minStock": { "type": "number" },

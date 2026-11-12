@@ -22,9 +22,12 @@ import {
   Filter,
   Check,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  Barcode,
+  Camera
 } from 'lucide-react';
 import { StockItem, StockMovement, CompanyProfile } from '../types';
+import { BarcodeScannerModal } from './BarcodeScannerModal';
 import {
   exportStockToExcel,
   importStockFromExcel,
@@ -84,9 +87,11 @@ export const StockTab: React.FC<StockTabProps> = ({
   const [feedbackMessage, setFeedbackMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [barcodeScannerTarget, setBarcodeScannerTarget] = useState<'search' | 'form' | null>(null);
 
   // Form states for Add/Edit
   const [formCode, setFormCode] = useState('');
+  const [formBarcode, setFormBarcode] = useState('');
   const [formName, setFormName] = useState('');
   const [formStock, setFormStock] = useState<number>(50);
   const [formMinStock, setFormMinStock] = useState<number>(15);
@@ -112,11 +117,13 @@ export const StockTab: React.FC<StockTabProps> = ({
 
   // Filtered stock list
   const filteredStock = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
     return stockList.filter((item) => {
       const matchSearch =
-        searchTerm === '' ||
-        (item.code || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.name.toLowerCase().includes(searchTerm.toLowerCase());
+        term === '' ||
+        (item.code || '').toLowerCase().includes(term) ||
+        (item.barcode || '').toLowerCase().includes(term) ||
+        item.name.toLowerCase().includes(term);
 
       const matchCategory = selectedCategory === 'all' || item.category === selectedCategory;
 
@@ -170,6 +177,7 @@ export const StockTab: React.FC<StockTabProps> = ({
   const handleOpenAdd = () => {
     setEditingItem(null);
     setFormCode('');
+    setFormBarcode('');
     setFormName('');
     setFormStock(50);
     setFormMinStock(15);
@@ -184,6 +192,7 @@ export const StockTab: React.FC<StockTabProps> = ({
   const handleOpenEdit = (item: StockItem) => {
     setEditingItem(item);
     setFormCode(item.code || '');
+    setFormBarcode(item.barcode || '');
     setFormName(item.name);
     setFormStock(item.currentStock);
     setFormMinStock(item.minStock || 15);
@@ -202,6 +211,8 @@ export const StockTab: React.FC<StockTabProps> = ({
       return;
     }
 
+    const cleanBarcode = formBarcode.trim();
+
     if (editingItem) {
       // Update existing item
       const updated = stockList.map((it) => {
@@ -209,6 +220,7 @@ export const StockTab: React.FC<StockTabProps> = ({
           return {
             ...it,
             code: formCode.trim(),
+            barcode: cleanBarcode || '',
             name: formName.trim(),
             currentStock: Math.max(0, Number(formStock) || 0),
             minStock: Math.max(0, Number(formMinStock) || 0),
@@ -234,6 +246,7 @@ export const StockTab: React.FC<StockTabProps> = ({
       const newItem: StockItem = {
         id: `stock-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         code: formCode.trim(),
+        barcode: cleanBarcode || '',
         name: formName.trim(),
         currentStock: Math.max(0, Number(formStock) || 0),
         minStock: Math.max(0, Number(formMinStock) || 0),
@@ -469,6 +482,7 @@ export const StockTab: React.FC<StockTabProps> = ({
           if (idx >= 0) {
             merged[idx] = {
               ...merged[idx],
+              barcode: imp.barcode || merged[idx].barcode,
               currentStock: imp.currentStock,
               costPrice: imp.costPrice || merged[idx].costPrice,
               wholesalePrice: imp.wholesalePrice || merged[idx].wholesalePrice,
@@ -647,25 +661,36 @@ export const StockTab: React.FC<StockTabProps> = ({
       {/* Control Bar: Search, Category, Actions */}
       <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3.5">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-          {/* Search Input */}
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por código (ex: 47, 10) ou descrição do produto (ex: lixa, bloco)..."
-              className="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 placeholder:text-slate-400 outline-none focus:border-indigo-500 focus:bg-white transition-all"
-            />
-            {searchTerm && (
-              <button
-                type="button"
-                onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
+          {/* Search Input + Barcode Scanner */}
+          <div className="flex flex-1 items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Buscar por código, código de barras ou descrição do produto..."
+                className="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 placeholder:text-slate-400 outline-none focus:border-indigo-500 focus:bg-white transition-all"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setBarcodeScannerTarget('search')}
+              className="px-3 py-2.5 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer shrink-0"
+              title="Ler código de barras com a câmera para pesquisar no estoque"
+            >
+              <Barcode className="w-4 h-4" />
+              <span className="hidden sm:inline">Ler Barras</span>
+            </button>
           </div>
 
           {/* Action Buttons */}
@@ -917,9 +942,17 @@ export const StockTab: React.FC<StockTabProps> = ({
                   </div>
                 </div>
 
-                {/* Product Name */}
-                <div className="font-bold text-slate-900 text-sm leading-snug">
-                  {item.name}
+                {/* Product Name & Barcode */}
+                <div className="space-y-1">
+                  <div className="font-bold text-slate-900 text-sm leading-snug">
+                    {item.name}
+                  </div>
+                  {item.barcode && (
+                    <div className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md">
+                      <Barcode className="w-3 h-3 shrink-0" />
+                      <span>{item.barcode}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Stock Stepper & Status */}
@@ -1066,12 +1099,20 @@ export const StockTab: React.FC<StockTabProps> = ({
                         )}
                       </td>
 
-                      {/* Name & Category */}
+                      {/* Name, Barcode & Category */}
                       <td className="py-3 px-4">
                         <div className="font-bold text-slate-900 text-xs sm:text-sm">{item.name}</div>
-                        {item.category && item.category !== 'Geral' && (
-                          <span className="text-[10px] text-slate-400 font-medium">{item.category}</span>
-                        )}
+                        <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                          {item.barcode && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-md">
+                              <Barcode className="w-3 h-3 shrink-0" />
+                              {item.barcode}
+                            </span>
+                          )}
+                          {item.category && item.category !== 'Geral' && (
+                            <span className="text-[10px] text-slate-400 font-medium">{item.category}</span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Current Stock */}
@@ -1167,7 +1208,7 @@ export const StockTab: React.FC<StockTabProps> = ({
             </div>
 
             <form onSubmit={handleSaveItem} className="space-y-4 pt-4">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
                     Código / SKU
@@ -1176,24 +1217,54 @@ export const StockTab: React.FC<StockTabProps> = ({
                     type="text"
                     value={formCode}
                     onChange={(e) => setFormCode(e.target.value)}
-                    placeholder="Ex: 47, 10"
+                    placeholder="Ex: 9200047"
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500"
                   />
                 </div>
 
-                <div className="col-span-2">
-                  <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
-                    Descrição do Produto *
+                <div className="sm:col-span-2">
+                  <label className="block text-[11px] font-bold text-indigo-700 uppercase mb-1 flex items-center gap-1">
+                    <Barcode className="w-3.5 h-3.5" />
+                    <span>Código de Barras (EAN / Leitor)</span>
                   </label>
-                  <input
-                    type="text"
-                    required
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                    placeholder="Ex: Lixa moeda preta podóloga..."
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold outline-none focus:border-indigo-500"
-                  />
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={formBarcode}
+                      onChange={(e) => setFormBarcode(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                        }
+                      }}
+                      placeholder="Bipe com leitor ou digite (ex: 789...)"
+                      className="flex-1 px-3 py-2 border border-indigo-200 bg-indigo-50/30 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500 focus:bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setBarcodeScannerTarget('form')}
+                      className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer"
+                      title="Ler código de barras com a câmera"
+                    >
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>Ler</span>
+                    </button>
+                  </div>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
+                  Descrição do Produto *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  placeholder="Ex: Lixa moeda preta podóloga..."
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold outline-none focus:border-indigo-500"
+                />
               </div>
 
               <div className="grid grid-cols-3 gap-3">
@@ -1703,6 +1774,26 @@ export const StockTab: React.FC<StockTabProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal: Leitor de Código de Barras (Câmera / USB) */}
+      <BarcodeScannerModal
+        isOpen={barcodeScannerTarget !== null}
+        onClose={() => setBarcodeScannerTarget(null)}
+        title={
+          barcodeScannerTarget === 'form'
+            ? 'Cadastrar Código de Barras do Produto'
+            : 'Pesquisar Produto por Código de Barras'
+        }
+        onScan={(scannedCode) => {
+          if (barcodeScannerTarget === 'form') {
+            setFormBarcode(scannedCode);
+            showFeedback(`✓ Código de barras lido: ${scannedCode}`);
+          } else if (barcodeScannerTarget === 'search') {
+            setSearchTerm(scannedCode);
+          }
+          setBarcodeScannerTarget(null);
+        }}
+      />
     </div>
   );
 };

@@ -21,6 +21,7 @@ export interface Customer {
 export interface StockItem {
   id: string;
   code: string;             // Código / SKU
+  barcode?: string;         // Código de Barras (EAN / GTIN / QR / Code128)
   name: string;             // Descrição do Produto
   currentStock: number;     // Em Estoque (Qtd atual)
   minStock?: number;        // Estoque Mínimo
